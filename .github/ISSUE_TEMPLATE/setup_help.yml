@@ -1,0 +1,26 @@
+name: Setup help
+description: Stuck on Google Cloud, Vercel or connecting a client
+labels: [setup]
+body:
+  - type: markdown
+    attributes:
+      value: Please check docs/setup-google.md and docs/setup-vercel.md troubleshooting sections first.
+  - type: dropdown
+    id: step
+    attributes:
+      label: Where are you stuck
+      options: [Google Cloud project or consent screen, OAuth client or redirect URI, Vercel deploy or Blob store, /setup or /connect page, Adding the connector to my AI client, Other]
+    validations:
+      required: true
+  - type: dropdown
+    id: account
+    attributes:
+      label: Account type
+      options: [Personal Gmail, Google Workspace, Both]
+  - type: textarea
+    id: details
+    attributes:
+      label: Exact error message and what you tried
+      description: Do not paste client secrets, tokens or secret environment values.
+    validations:
+      required: true

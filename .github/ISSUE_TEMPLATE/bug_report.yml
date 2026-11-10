@@ -1,0 +1,36 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you saw. Redact tokens, emails and file names.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Crossdrive version
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: client
+    attributes:
+      label: MCP client
+      options: [Claude web or desktop, Claude mobile, Claude Code, ChatGPT, Other]
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Provider involved
+      options: [Google Drive, Gmail, OneDrive (beta), Dropbox (beta), Not sure]
+  - type: textarea
+    id: logs
+    attributes:
+      label: Tool output or Vercel log lines
+      description: Paste only what is needed. Never paste tokens, secrets or file contents.
+      render: text

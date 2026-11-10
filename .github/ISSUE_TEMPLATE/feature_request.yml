@@ -1,0 +1,20 @@
+name: Feature request
+description: Suggest an improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that you cannot do today?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Proposed behaviour
+  - type: textarea
+    id: safety
+    attributes:
+      label: Safety considerations
+      description: Does this write, delete, send or share anything? Crossdrive never adds permanent delete.
