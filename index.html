@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crossdrive — one safe connection from your AI to every drive you own</title>
+<meta name="description" content="Crossdrive is a self-hosted MCP server giving your AI one safe connection to every Google Drive and Gmail account you own. Trash only, audited, MIT licensed.">
+<link rel="canonical" href="https://vivek-gelp.github.io/crossdrive/">
+<meta name="theme-color" content="#F7F5F0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E1116" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/svg+xml" href="brand/crossdrive-mark.svg">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Crossdrive">
+<meta property="og:title" content="Crossdrive — every drive you own, one safe connection for your AI">
+<meta property="og:description" content="A self-hosted MCP server for several Google Drive and Gmail accounts at once. Trash only, audited, MIT licensed.">
+<meta property="og:url" content="https://vivek-gelp.github.io/crossdrive/">
+<meta property="og:image" content="https://vivek-gelp.github.io/crossdrive/brand/social-card.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="Crossdrive logo: two overlapping rounded squares, teal and amber">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Crossdrive — every drive you own, one safe connection for your AI">
+<meta name="twitter:description" content="A self-hosted MCP server for several Google Drive and Gmail accounts at once. Trash only, audited, MIT licensed.">
+<meta name="twitter:image" content="https://vivek-gelp.github.io/crossdrive/brand/social-card.png">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareSourceCode","name":"Crossdrive","description":"A self-hosted remote MCP server that gives AI assistants one safe connection to several Google Drive and Gmail accounts, with OneDrive and Dropbox in beta.","codeRepository":"https://github.com/vivek-gelp/crossdrive","license":"https://opensource.org/licenses/MIT","programmingLanguage":"TypeScript","url":"https://vivek-gelp.github.io/crossdrive/"}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#0e1116;--paper:#f7f5f0;--teal:#12b5a6;--amber:#f5a524;--overlap:#0b6b63;
+--bg:var(--paper);--surface:#fff;--surface-2:#efece4;--text:var(--ink);--text-muted:#5a6068;--border:#dcd8cd;
+--accent:var(--overlap);--accent-contrast:#fff;--focus:var(--teal);--warn:#8a5300;--warn-bg:#fdefd3;
+--code-bg:#0e1116;--code-text:#e8e6e1;
+--font-body:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+--font-display:"Space Grotesk",var(--font-body);
+--font-mono:ui-monospace,"SFMono-Regular","Cascadia Mono",Consolas,Menlo,monospace;
+--radius:10px;--radius-sm:6px;--measure:760px;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1116;--surface:#161a21;--surface-2:#1d222b;--text:#ece9e2;--text-muted:#9aa1ab;--border:#2a303a;--accent:#2fd4c3;--accent-contrast:#0e1116;--overlap:#0e8f84;--warn:#f7b955;--warn-bg:#33250c;--code-bg:#090b0f;color-scheme:dark}}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-body);font-size:16px;line-height:1.6;overflow-wrap:break-word}
+.wrap{width:100%;max-width:var(--measure);margin:0 auto;padding-left:16px;padding-right:16px}
+.skip{position:absolute;left:-999px;top:8px;background:var(--surface);color:var(--text);padding:8px 12px;border-radius:var(--radius-sm);z-index:10}
+.skip:focus{left:8px}
+header.wrap{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 20px;padding-top:20px;padding-bottom:20px}
+.brand{display:inline-flex;align-items:center}
+.brand img{height:30px;width:auto;display:block}
+.nav{display:flex;flex-wrap:wrap;gap:4px 18px;font-size:.95rem}
+.nav a{color:var(--text-muted);padding:6px 0}
+.nav a:hover{color:var(--text)}
+main.wrap{padding-top:24px;padding-bottom:64px}
+section{margin-top:40px}
+h1,h2,h3{font-family:var(--font-display);line-height:1.15;letter-spacing:-.02em;margin:0 0 .5em}
+h1{font-size:clamp(2rem,7vw,3.25rem);font-weight:700}
+h2{font-size:clamp(1.4rem,4.5vw,1.85rem);font-weight:600}
+h3{font-size:1.05rem;font-weight:600}
+p{margin:0 0 1em}
+ul,ol{margin:0 0 1em;padding-left:1.25em}
+li+li{margin-top:.5em}
+a{color:var(--accent);text-underline-offset:3px}
+a:hover{text-decoration:underline}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:2px}
+code{font-family:var(--font-mono);font-size:.9em}
+:not(pre)>code{background:var(--surface-2);border:1px solid var(--border);border-radius:4px;padding:.1em .35em;overflow-wrap:anywhere}
+pre{background:var(--code-bg);color:var(--code-text);border-radius:var(--radius);padding:14px 16px;margin:0 0 1em;overflow-x:auto;font-family:var(--font-mono);font-size:.85rem;line-height:1.55}
+pre code{font-size:inherit;background:none;border:0;padding:0;color:inherit}
+.muted{color:var(--text-muted)}
+.hero{padding-top:16px;margin-top:0}
+.hero .sub{font-size:1.15rem;color:var(--text-muted);max-width:36em}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 18px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font:inherit;font-weight:600;font-size:.95rem;line-height:1.2;text-decoration:none;cursor:pointer}
+.btn:hover{border-color:var(--accent);text-decoration:none}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:var(--accent-contrast)}
+.btn-primary:hover{filter:brightness(1.08)}
+.demo{margin:32px 0 8px;border-radius:var(--radius);background:var(--code-bg);color:var(--code-text);font-family:var(--font-mono);font-size:.84rem;line-height:1.6;overflow:hidden;border:1px solid var(--border)}
+.demo-bar{display:flex;align-items:center;gap:6px;padding:10px 14px;border-bottom:1px solid #222832;color:#8b929c;font-size:.75rem}
+.demo-bar i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.demo-body{padding:16px;overflow-x:auto}
+.demo-body p{margin:0 0 .9em;white-space:pre-wrap}
+.demo-body p:last-child{margin-bottom:0}
+.demo .who{color:#8b929c}.demo .you{color:var(--amber)}.demo .ok{color:var(--teal)}
+#demo:empty{display:none}
+.grid{display:grid;grid-template-columns:1fr;gap:12px}
+@media (min-width:640px){.grid{grid-template-columns:1fr 1fr}}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px}
+.card>:last-child{margin-bottom:0}
+.grid .card h3{margin-top:0}
+.grid .card p{margin:0;color:var(--text-muted);font-size:.95rem}
+.note{background:var(--warn-bg);color:var(--warn);border-radius:var(--radius-sm);padding:10px 14px;font-size:.92rem;font-weight:500}
+.steps{padding-left:1.4em}
+.steps li{padding-left:.3em}
+.copy{display:flex;gap:8px;align-items:stretch;margin-bottom:1em}
+.copy pre{flex:1;margin:0;min-width:0}
+footer.wrap{display:flex;flex-wrap:wrap;gap:8px 18px;padding-top:24px;padding-bottom:40px;border-top:1px solid var(--border);color:var(--text-muted);font-size:.875rem}
+footer.wrap a{color:var(--text-muted)}
+footer.wrap p{margin:0;flex-basis:100%}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="wrap">
+  <a class="brand" href="./" aria-label="Crossdrive home">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="brand/crossdrive-logo-dark.svg">
+      <img src="brand/crossdrive-logo.svg" alt="Crossdrive" width="150" height="30">
+    </picture>
+  </a>
+  <nav class="nav" aria-label="Main">
+    <a href="https://github.com/vivek-gelp/crossdrive">GitHub</a>
+    <a href="https://github.com/vivek-gelp/crossdrive/tree/main/docs">Docs</a>
+    <a href="https://github.com/vivek-gelp/crossdrive/discussions">Discussions</a>
+  </nav>
+</header>
+
+<main id="main" class="wrap">
+  <section class="hero" aria-labelledby="h-hero">
+    <h1 id="h-hero">Every drive you own. One safe connection for your AI.</h1>
+    <p class="sub">Claude's Drive connector sees one Google account. Crossdrive sees all of them, plus OneDrive and Dropbox in beta, through a single URL you host yourself.</p>
+    <div class="row" style="margin-top:24px">
+      <a class="btn btn-primary" href="https://github.com/vivek-gelp/crossdrive">Get it on GitHub</a>
+      <a class="btn" href="https://github.com/vivek-gelp/crossdrive/blob/main/docs/setup-vercel.md">Deploy guide</a>
+    </div>
+
+    <div class="demo" role="img" aria-label="Example: an assistant previews and then applies a move of 12 invoices between two drives">
+      <div class="demo-bar"><i style="background:var(--teal)"></i><i style="background:var(--amber)"></i><span style="margin-left:8px">assistant · crossdrive</span></div>
+      <div class="demo-body" aria-hidden="true">
+        <p><span class="you">you</span>
+Move last year's invoices from my personal drive to the company drive.</p>
+        <p><span class="who">crossdrive · batch move · dry run</span>
+from personal:/Invoices/2025
+to   work:/Finance/Invoices/2025
+12 files · 48 MB · 0 conflicts</p>
+        <p><span class="who">assistant</span>
+12 invoices, 48 MB, no name clashes. Nothing is deleted. Apply?</p>
+        <p><span class="you">you</span>
+Yes.</p>
+        <p><span class="who">crossdrive · batch move</span>
+<span class="ok">applied · 12 moved · undo id a1f3</span></p>
+      </div>
+    </div>
+    <!-- DEMO: embed the demo GIF/video inside the #demo container below when it exists (the README suggests a 20-second phone recording). An empty container renders nothing. -->
+    <div id="demo"></div>
+  </section>
+
+  <section aria-labelledby="h-what">
+    <h2 id="h-what">What it does</h2>
+    <div class="grid">
+      <div class="card"><h3>Every account, one connection</h3><p>Connect several Google accounts and give each a label. Your assistant addresses files as <code>work:/Finance/2026</code> or <code>personal:/Taxes</code> and searches across all of them at once.</p></div>
+      <div class="card"><h3>Across clouds (BETA)</h3><p>Move and copy files and whole folders between accounts, and between Google Drive, OneDrive and Dropbox, without downloading anything to your laptop. OneDrive and Dropbox support is beta and not yet tested against live accounts.</p></div>
+      <div class="card"><h3>Gmail, draft-only by default</h3><p>Search and read mail in each connected Gmail account, save attachments to the right folder, and prepare replies. Sending stays off until you turn it on per account.</p></div>
+      <div class="card"><h3>Works from your phone</h3><p>It is a remote MCP server: one URL works in Claude, ChatGPT and any MCP client, on desktop, web and the mobile apps.</p></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-safety">
+    <h2 id="h-safety">Safety is in the code</h2>
+    <p class="muted">These rules are enforced by the server, not by a prompt. An assistant that misreads a request still cannot get past them.</p>
+    <div class="grid">
+      <div class="card"><h3>Trash only</h3><p>There is no permanent-delete call in the code. Deleting means moving to the provider's trash, where you can restore it.</p></div>
+      <div class="card"><h3>Read-only accounts</h3><p>Mark any account read-only and the server rejects every write to it, whatever the assistant asks for.</p></div>
+      <div class="card"><h3>Dry run, then undo</h3><p>Most writes can be previewed with a dry run first. Moves, renames and trashes are logged with an id that undo can roll back.</p></div>
+      <div class="card"><h3>Audit log</h3><p>Each write is recorded with time, client, account, action and file ids. File contents and mail bodies are not logged.</p></div>
+      <div class="card"><h3>Per-client consent</h3><p>No client gets a token until you sign in and approve it. Clients that should only look can be given read-only access.</p></div>
+      <div class="card"><h3>Content is data</h3><p>Text inside files and emails is returned as untrusted data. Instructions found in a document never become tool calls on their own.</p></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-keys">
+    <h2 id="h-keys">Your instance, your keys</h2>
+    <ul>
+      <li>You deploy it to your own Vercel account.</li>
+      <li>It signs in to Google with your own Google Cloud project and OAuth client.</li>
+      <li>Refresh tokens are encrypted at rest (AES-256-GCM) in storage you own.</li>
+      <li>No third-party service sits between your assistant and your files. The code is MIT licensed.</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="h-compare">
+    <h2 id="h-compare">How it compares</h2>
+    <ul>
+      <li><strong>Where it helps:</strong> if you have several Google accounts, Crossdrive puts them under one URL with labels you choose, and search fans out across them. The built-in connector sees one account per connector.</li>
+      <li><strong>Where it is narrower:</strong> on Google it covers Drive and Gmail only, by design. For Docs editing, Sheets formulas or Calendar, use another server; running both is fine.</li>
+      <li><strong>Where it costs more effort:</strong> you bring your own Google Cloud project and a Vercel deploy. With a single Google account and a wish to chat with your files, the built-in connector is the least work.</li>
+    </ul>
+    <p class="muted">A fuller, sourced table is in the <a href="https://github.com/vivek-gelp/crossdrive#how-it-compares">README</a>.</p>
+  </section>
+
+  <section aria-labelledby="h-start">
+    <h2 id="h-start">Get started in five steps</h2>
+    <ol class="steps">
+      <li><strong>Create a Google OAuth client</strong> in your own Google Cloud project with the Drive and Gmail APIs enabled. <a href="https://github.com/vivek-gelp/crossdrive/blob/main/docs/setup-google.md">Step by step</a>.</li>
+      <li><strong>Deploy to Vercel</strong> with the deploy button in the README, attach a Blob store, and paste the client id and secret. Generate the two secrets with <code>openssl rand -base64 32</code>.</li>
+      <li><strong>Add the redirect URIs</strong> <code>&lt;your URL&gt;/api/google/callback</code> and <code>&lt;your URL&gt;/oauth/google-callback</code> to the Google client, then redeploy. Open <code>&lt;your URL&gt;/setup</code> for a checklist of what is missing.</li>
+      <li><strong>Connect your accounts</strong> at <code>&lt;your URL&gt;/connect</code>: pick a label such as <code>work</code> or <code>personal</code> and sign in. New accounts start as read + write with mail as drafts only.</li>
+      <li><strong>Add the connector</strong> to your AI client using <code>&lt;your URL&gt;/api/mcp</code>, then ask "search all my drives for the 2026 lease". In Claude Code:</li>
+    </ol>
+    <div class="copy">
+      <pre><code id="cmd">claude mcp add --transport http crossdrive https://YOUR-DEPLOYMENT.vercel.app/api/mcp</code></pre>
+      <button class="btn" type="button" id="copy-btn" aria-label="Copy command">Copy</button>
+    </div>
+    <p class="note">OneDrive and Dropbox support is beta and not yet tested against live accounts.</p>
+  </section>
+
+  <section class="card" aria-labelledby="h-hosted">
+    <h2 id="h-hosted" style="margin-top:0">Want a hosted version?</h2>
+    <p>A hosted, no-setup version is being considered. If that would be useful to you, say so in GitHub Discussions.</p>
+    <a class="btn" href="https://github.com/vivek-gelp/crossdrive/discussions">Tell us in Discussions</a>
+  </section>
+</main>
+
+<footer class="wrap">
+  <a href="https://github.com/vivek-gelp/crossdrive/blob/main/LICENSE">MIT licence</a>
+  <a href="https://github.com/vivek-gelp/crossdrive/blob/main/SECURITY.md">Security policy</a>
+  <a href="https://github.com/vivek-gelp/crossdrive">GitHub</a>
+  <p>OneDrive and Dropbox support is beta and not yet tested against live accounts.</p>
+</footer>
+<script>
+document.getElementById('copy-btn').addEventListener('click',function(){var b=this;navigator.clipboard.writeText(document.getElementById('cmd').textContent).then(function(){b.textContent='Copied';setTimeout(function(){b.textContent='Copy'},1500)})});
+</script>
+</body>
+</html>
