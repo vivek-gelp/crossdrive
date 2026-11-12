@@ -1,13 +1,14 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { Space_Grotesk } from "next/font/google";
+import localFont from "next/font/local";
 import { baseUrl } from "@/lib/config";
 import "./ui.css";
 
-const display = Space_Grotesk({
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
+// Bundled with the repo (SIL OFL, see app/fonts) so a build never depends on fetching Google Fonts.
+const display = localFont({
+  src: "./fonts/SpaceGrotesk-latin-var.woff2",
+  weight: "300 700",
   variable: "--font-space-grotesk",
   display: "swap",
 });
