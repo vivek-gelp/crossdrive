@@ -69,6 +69,10 @@ describe("transfer OneDrive -> Dropbox (folder tree)", () => {
     expect(r!.totals.verifiedHash).toBe(3);
     expect(text(h.dbx.get("client-a", "/Inbox/Reports/2026/q2.txt")?.content)).toBe("second quarter");
     expect(h.dbx.get("client-a", "/Inbox/Reports/Empty")?.folder).toBe(true);
+    // created[] names where each file landed, not where it came from (live test round 4).
+    const createdPaths = r!.created.map((c) => c.path).sort();
+    expect(createdPaths.length).toBeGreaterThan(0);
+    for (const p of createdPaths) expect(p.toLowerCase().startsWith("/inbox/reports/")).toBe(true);
 
     const again = await runAll({ from: "work:/Reports", to: "client-a:/Inbox" });
     expect(again.at(-1)!.totals).toMatchObject({ copied: 0, skipped: 3, failed: 0, folders: 0 });

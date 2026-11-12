@@ -13,13 +13,13 @@
  */
 import { assertAccountWritable } from "./access";
 import { appendAudit } from "./audit";
-import { assertWritable, checkName, ctxFor, folderFromPath, inboxFolder, ownerLabel, targetFolder, toResult, type Ctx, type FileResult } from "./ctx";
+import { assertWritable, checkName, ctxFor, folderFromPath, ownerLabel, targetFolder, toResult, type Ctx, type FileResult } from "./ctx";
 import { googleStreamReason, unstreamable } from "./copyroute";
 import { DriveError, FOLDER_MIME, type DriveFile } from "./drive";
 import { isGoogleNativeMime } from "./naming";
 import { pathResolver } from "./paths";
 import { CONVERTED_NOTE, streamById } from "./providers/transfer";
-import { grantTemporaryRead, removeTemporaryGrant, TEMP_GRANT_ROLE, TEMP_GRANT_TTL_MS } from "./tempgrant";
+import { grantTemporaryRead, removeTemporaryGrant, TEMP_GRANT_EXPIRY_TEXT, TEMP_GRANT_ROLE } from "./tempgrant";
 
 export interface OpMeta {
   actor: string;
@@ -111,7 +111,11 @@ export interface MkdirPlan {
 
 export async function planMkdir(c: Ctx, a: MkdirArgs): Promise<MkdirPlan> {
   await assertAccountWritable(c.account);
-  const parentId = a.parentId ?? (await folderFromPath(c, a.parentPath ?? "/"));
+  // Never default to the My Drive root: a misnamed or missing argument must not put the folder somewhere unintended.
+  if (!a.parentId && !a.parentPath) {
+    throw new Error(`mkdir needs parentPath or parentId for the folder that will hold "${a.name}"; nothing was created. For the My Drive root pass parentPath "${c.account.label}:/".`);
+  }
+  const parentId = a.parentId ?? (await folderFromPath(c, a.parentPath!));
   const existing = await c.drive.findChildByName(parentId, a.name, true);
   if (!existing) assertWritable(await c.drive.getFile(parentId), "addChildren");
   return { parentId, parentPath: await folderPath(c, parentId), existing };
@@ -170,7 +174,10 @@ export interface MovePlan {
 export async function planMove(c: Ctx, a: MoveArgs): Promise<MovePlan> {
   await assertAccountWritable(c.account);
   const file = await getSource(c, a.fileId);
-  const toFolderId = await targetFolder(c, a, `/${inboxFolder()}`);
+  if (!a.toFolderId && !a.toPath) {
+    throw new Error(`move needs toPath or toFolderId for the destination folder; nothing was moved. For the My Drive root pass toPath "${c.account.label}:/".`);
+  }
+  const toFolderId = await targetFolder(c, a);
   const target = await getTargetFolder(c, toFolderId);
   assertWritable(file, "edit");
   assertWritable(target, "addChildren");
@@ -198,6 +205,7 @@ export async function moveFile(c: Ctx, a: MoveArgs, meta: OpMeta, plan?: MovePla
   let file: DriveFile;
   try {
     file = await c.drive.move(a.fileId, plan.toFolderId, plan.file.parents ?? []);
+    pathResolver.forget(c.account.label);
   } catch (e) {
     if (e instanceof DriveError) {
       throw new Error(`Drive refused to move ${plan.file.name} (owner ${ownerLabel(c, plan.file)}): ${e.message}`);
@@ -261,6 +269,7 @@ export async function renameFile(c: Ctx, a: RenameArgs, meta: OpMeta, plan?: Ren
   plan ??= await planRename(c, a);
   if (plan.unchanged) return { ...(await toResult(c, plan.file)), unchanged: true };
   const file = await c.drive.rename(a.fileId, a.newName);
+  pathResolver.forget(c.account.label);
   const entry = await appendAudit({
     tool: "rename",
     account: c.account.label,
@@ -306,6 +315,7 @@ export async function previewTrash(c: Ctx, fileId: string, trashed: boolean): Pr
 export async function setFileTrashed(c: Ctx, fileId: string, trashed: boolean, meta: OpMeta, plan?: TrashPlan): Promise<FileResult & { trashed: boolean; auditId: string }> {
   plan ??= await planTrash(c, fileId);
   const file = await c.drive.setTrashed(fileId, trashed);
+  pathResolver.forget(c.account.label);
   const entry = await appendAudit({
     tool: trashed ? "trash" : "untrash",
     account: c.account.label,
@@ -414,7 +424,7 @@ export async function planCopy(a: CopyArgs): Promise<CopyPlan> {
 
 function methodText(p: CopyPlan): string {
   if (p.method === "share") {
-    return ` (cross-account: ${p.src.account.label} grants ${p.dst.account.label} temporary ${TEMP_GRANT_ROLE} access to this one file, expiring after ${TEMP_GRANT_TTL_MS / 3_600_000} h, removed right after the copy)`;
+    return ` (cross-account: ${p.src.account.label} grants ${p.dst.account.label} temporary ${TEMP_GRANT_ROLE} access to this one file, removed right after the copy; ${TEMP_GRANT_EXPIRY_TEXT})`;
   }
   if (p.method === "stream") return ` (cross-account, streamed through this server because ${p.streamReason}${p.converted ? `; ${CONVERTED_NOTE}` : ""})`;
   return "";
@@ -441,7 +451,7 @@ export async function previewCopy(a: CopyArgs): Promise<OpPreview> {
 
 /**
  * Same account: `files.copy`. Different accounts, writable source that may share the file: the source grants the
- * destination account temporary reader access to this one file (expiring, no e-mail, audited), the destination
+ * destination account temporary reader access to this one file (expiry where Drive allows one, no e-mail, audited), the destination
  * copies it server-side, and the grant is removed in a `finally` (a failed removal is reported loudly). A
  * permission the destination already had is left as is. Read-only source, or a file only writers may copy: the
  * file is streamed through this server instead (streamById) and nothing is written to the source account.

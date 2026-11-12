@@ -6,6 +6,8 @@
  * tool in tools.ts and tools-mail.ts without touching their handlers.
  */
 import type { McpServer } from "@modelcontextprotocol/server";
+import type { z } from "zod";
+import { strictDeep } from "./strict";
 
 export const MAX_RESULT_CHARS = 60_000;
 /** Room left for the wrapper fields around the kept text. */
@@ -62,13 +64,22 @@ export function guardResult<R extends TextResult>(tool: string, r: R, max = MAX_
   return { ...r, content: [{ ...first, type: "text", text: out }, ...r.content.slice(1)] };
 }
 
-/** A view of `server` whose registerTool applies guardResult to every handler's result. */
+/**
+ * A view of `server` whose registerTool applies guardResult to every handler's result and makes every input schema
+ * strict (strict.ts): unknown arguments are rejected by the SDK's own validation, before any handler runs.
+ */
+function strictInputs(def: unknown): unknown {
+  const d = def as { inputSchema?: z.ZodType } | undefined;
+  if (!d?.inputSchema) return def;
+  return { ...d, inputSchema: strictDeep(d.inputSchema) };
+}
+
 export function withResultGuard(server: McpServer): McpServer {
   return new Proxy(server, {
     get(target, prop) {
       if (prop === "registerTool") {
         return (name: string, def: unknown, handler: (...args: unknown[]) => Promise<TextResult>) =>
-          (target.registerTool as unknown as (n: string, d: unknown, h: (...args: unknown[]) => Promise<TextResult>) => unknown)(name, def, async (...args: unknown[]) =>
+          (target.registerTool as unknown as (n: string, d: unknown, h: (...args: unknown[]) => Promise<TextResult>) => unknown)(name, strictInputs(def), async (...args: unknown[]) =>
             guardResult(name, await handler(...args)),
           );
       }

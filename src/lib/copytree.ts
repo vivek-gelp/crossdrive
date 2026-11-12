@@ -8,7 +8,7 @@
  *
  * Cross-account, writable source: no folder is ever shared. For each file
  * the source account grants the destination account temporary `reader`
- * access to that one file (expiring, no e-mail, audited; tempgrant.ts), the
+ * access to that one file (expiry where Drive allows one, no e-mail, audited; tempgrant.ts), the
  * destination copies it server-side, and the grant is removed in a `finally`
  * before the next file. So at most one file is exposed at a time and nothing
  * lingers when a client abandons the resume cursor. A file the source may not
@@ -38,7 +38,7 @@ import type { OpMeta } from "./ops";
 import { pathResolver } from "./paths";
 import { CONVERTED_NOTE, isStreamCursor, streamById } from "./providers/transfer";
 import { streamCopy, type StreamCopyPlan, type StreamCopyResult } from "./streamcopy";
-import { grantTemporaryRead, removeTemporaryGrant, TEMP_GRANT_ROLE, TEMP_GRANT_TTL_MS, type TempGrant } from "./tempgrant";
+import { grantTemporaryRead, removeTemporaryGrant, TEMP_GRANT_EXPIRY_TEXT, TEMP_GRANT_ROLE, type TempGrant } from "./tempgrant";
 
 export const DEFAULT_MAX_FILES = 150;
 export const DRY_RUN_WALK_CAP = 5000;
@@ -295,7 +295,7 @@ export async function planCopyTree(a: CopyTreeArgs, src: Ctx, dst: Ctx, file: Dr
       `Nothing was copied. Run again with dryRun=false; each call copies up to ${maxFiles} items and returns a resume cursor until done=true.` +
       (crossAccount
         ? ` Cross-account: no folder is shared; for each of ${grantedFiles} file(s) ${src.account.label} grants ${dst.account.label} temporary ${TEMP_GRANT_ROLE} access to that one file ` +
-          `(expiring after ${TEMP_GRANT_TTL_MS / 3_600_000} h, removed right after the file is copied, audited)` +
+          `(removed right after the file is copied, audited; ${TEMP_GRANT_EXPIRY_TEXT})` +
           (streamedFiles ? `; ${streamedFiles} file(s) stream through this server instead (see predictions)` : "") +
           "."
         : "") +

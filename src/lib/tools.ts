@@ -505,11 +505,13 @@ export function registerWriteTools(rawServer: McpServer) {
     "mkdir",
     {
       title: "Create folder",
-      description: "Create a folder (idempotent: returns the existing folder if one with that name exists). dryRun=true reports what would happen.",
+      description:
+        "Create a folder inside parentPath or parentId (one of them is required; pass parentPath \"label:/\" for the My Drive root). " +
+        "Idempotent: returns the existing folder if one with that name exists. dryRun=true reports what would happen.",
       inputSchema: z.object({
         account: label,
-        parentPath: pathArg.optional(),
-        parentId: z.string().optional(),
+        parentPath: pathArg.optional().describe("Folder that will hold the new folder (required unless parentId is given; label:/ is the My Drive root)"),
+        parentId: z.string().optional().describe("Id of the folder that will hold the new folder (alternative to parentPath)"),
         name: z.string().min(1),
         dryRun,
       }),
@@ -594,11 +596,12 @@ export function registerWriteTools(rawServer: McpServer) {
         "a pre-authorised session URL. PUT the bytes straight to it (no Google credentials, no Crossdrive token): either one PUT with the whole body and " +
         "`Content-Range: bytes 0-<size-1>/<size>`, or chunks whose length is a multiple of 256 KiB (8 MiB recommended) each with its Content-Range; every chunk but the last " +
         "answers 308 (Resume Incomplete) with a Range header, the last answers 200 with the file JSON (id, name, size). To recover after a network error PUT an empty body with " +
-        "`Content-Range: bytes */<size>` and continue from the end of the Range header. Then call upload_finish {account, fileId} so the file is audit-logged. Sessions expire after about a week.",
+        "`Content-Range: bytes */<size>` and continue from the end of the Range header. Then call upload_finish {account, fileId} so the file is audit-logged. Sessions expire after about a week. " +
+        "The destination is required: path or folderId.",
       inputSchema: z.object({
         account: label,
-        path: pathArg.optional(),
-        folderId: z.string().optional(),
+        path: pathArg.optional().describe("Destination folder (required unless folderId is given; label:/ is the My Drive root)"),
+        folderId: z.string().optional().describe("Destination folder id (alternative to path)"),
         name: z.string().min(1),
         mimeType: z.string().min(1),
         size: z.number().int().min(0).describe("Exact byte size of the file"),
@@ -610,6 +613,7 @@ export function registerWriteTools(rawServer: McpServer) {
       checkName(a.name, a.mimeType, a.allowNonStandardName);
       const c = await ctxFor(a.account);
       await assertAccountWritable(c.account);
+      if (!a.folderId && !a.path) throw new Error("upload_begin needs path or folderId for the destination folder; no upload session was opened.");
       const folderId = await resolvePutTarget(c.drive, { path: a.path, folderId: a.folderId }, c.rootId);
       assertWritable(await c.drive.getFile(folderId), "addChildren");
       const uploadUrl = await c.drive.beginResumableUpload({ name: a.name, parents: [folderId], mimeType: a.mimeType }, a.mimeType, a.size);
@@ -663,13 +667,13 @@ export function registerWriteTools(rawServer: McpServer) {
     {
       title: "Move file",
       description:
-        `Move a file or folder to another folder in the same account (My Drive, a shared folder you can edit, or a Shared Drive). Default target: the ${inboxFolder()} folder. ` +
+        "Move a file or folder to another folder in the same account (My Drive, a shared folder you can edit, or a Shared Drive). The destination is required: toPath or toFolderId. " +
         "Fails with a clear error when the source or target does not exist or the target already holds an item of the same name (nothing is duplicated). dryRun=true previews. The result's auditId can be passed to undo.",
       inputSchema: z.object({
         account: label,
         fileId: z.string(),
-        toPath: pathArg.optional(),
-        toFolderId: z.string().optional(),
+        toPath: pathArg.optional().describe("Destination folder (required unless toFolderId is given)"),
+        toFolderId: z.string().optional().describe("Destination folder id (alternative to toPath)"),
         dryRun,
       }),
       annotations: { destructiveHint: false },
@@ -727,7 +731,8 @@ export function registerWriteTools(rawServer: McpServer) {
       title: "Copy file or folder (also across accounts)",
       description:
         "Copy one file or a whole folder into a folder of the same or another connected account. Same account: Drive files.copy. Different accounts, writable source (method=share): " +
-        "for each file the source account grants the destination account temporary reader access to that one file (expires after 4 h, no e-mail, audited), the destination copies it " +
+        "for each file the source account grants the destination account temporary reader access to that one file (no e-mail, audited; an expiry is set only where Drive allows one, " +
+        "which consumer Gmail accounts do not, so there the protection is the immediate removal and the leftover listing in status), the destination copies it " +
         "server-side, and the grant is removed; folders are never shared, Google Docs/Sheets/Slides keep their type. Read-only source, or a file only writers may copy (method=stream): " +
         "the file is streamed through this server and nothing is written to the source; Docs/Sheets/Slides are exported and imported back (comments, revision history and some " +
         "formatting are not preserved), Forms and other types without an import path are listed in notCopied; a streamed single file can also return a resume cursor. " +

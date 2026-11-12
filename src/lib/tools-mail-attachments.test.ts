@@ -252,9 +252,10 @@ describe("mail attachments", () => {
     expect(Object.keys(ro.defs.mail_read!.inputSchema.shape)).not.toContain("saveAttachmentsTo");
     expect(Object.keys(defs.mail_attachment!.inputSchema.shape)).toContain("saveTo");
     expect(Object.keys(defs.mail_read!.inputSchema.shape)).toContain("saveAttachmentsTo");
-    // A saveTo sent anyway is not stripped silently: the schema lets it through and the handler refuses it, writing nothing.
+    // A saveTo sent anyway is not stripped silently: the strict schema refuses it with the same explanation, and the
+    // handler repeats the check, writing nothing.
     const args = { account: "work", messageId: "a1", attachmentId: "att-a1-0", maxChars: 1000, offset: 0, saveTo: { account: "work", folderId: "co" } };
-    expect(ro.defs.mail_attachment!.inputSchema.parse(args)).toHaveProperty("saveTo");
+    expect(() => ro.defs.mail_attachment!.inputSchema.parse(args)).toThrow(/saveTo needs a full-access client/);
     const r = await call(ro.tools, "mail_attachment", args);
     expect(r.isError).toBe(true);
     expect(r.text).toMatch(/saveTo needs a full-access client: this token is read-only, so nothing was saved/);

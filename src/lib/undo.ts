@@ -89,6 +89,7 @@ async function undoOne(e: StoredAuditEntry, actor: string, dryRun: boolean): Pro
       const back = await folderPath(c, from[0]!);
       if (dryRun) return { ...base, status: "ready", message: `move ${file.name} back to ${back}` };
       await c.drive.move(file.id, from.join(","), [to]);
+      pathResolver.forget(c.account.label);
       const entry = await audit({ from: to, to: from.join(",") });
       return { ...base, status: "undone", message: `moved ${file.name} back to ${back}`, auditId: entry.id };
     }
@@ -101,6 +102,7 @@ async function undoOne(e: StoredAuditEntry, actor: string, dryRun: boolean): Pro
       }
       if (dryRun) return { ...base, status: "ready", message: `rename ${file.name} back to ${e.from}` };
       await c.drive.rename(file.id, e.from);
+      pathResolver.forget(c.account.label);
       const entry = await audit({ from: e.to, to: e.from });
       return { ...base, status: "undone", message: `renamed ${e.to} back to ${e.from}`, auditId: entry.id };
     }
@@ -111,6 +113,7 @@ async function undoOne(e: StoredAuditEntry, actor: string, dryRun: boolean): Pro
     }
     if (dryRun) return { ...base, status: "ready", message: `${wasTrashed ? "restore" : "trash"} ${file.name}` };
     await c.drive.setTrashed(file.id, !wasTrashed);
+    pathResolver.forget(c.account.label);
     const entry = await audit({});
     return { ...base, status: "undone", message: `${wasTrashed ? "restored" : "trashed"} ${file.name}`, auditId: entry.id };
   } catch (err) {

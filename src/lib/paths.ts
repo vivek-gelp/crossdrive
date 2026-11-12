@@ -107,6 +107,16 @@ export class PathResolver {
 
   constructor(private readonly now: () => number = Date.now) {}
 
+  /**
+   * Drop everything cached for one account. Called after a move, rename or trash on this server instance so the
+   * next paths it reports are fresh; other instances still serve their cache until TTL_MS passes.
+   */
+  forget(label: string): void {
+    for (const m of [this.cache, this.folders] as Map<string, unknown>[]) {
+      for (const k of [...m.keys()]) if (k.startsWith(`${label}:`)) m.delete(k);
+    }
+  }
+
   async resolve(label: string, drive: DriveClient, segments: string[], rootId = "root", shared = false, sharedDrive = false): Promise<string> {
     const base = shared ? SHARED_PREFIX : sharedDrive ? DRIVE_PREFIX : rootId;
     const key = `${label}:${base}:/${segments.map((s) => s.toLowerCase()).join("/")}`;

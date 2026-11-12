@@ -38,7 +38,7 @@
  */
 import { appendAudit } from "../audit";
 import { copyTree, type CopyTreePlan, type CopyTreeResult } from "../copytree";
-import { TEMP_GRANT_TTL_MS } from "../tempgrant";
+import { TEMP_GRANT_EXPIRY_TEXT } from "../tempgrant";
 import { copyFile } from "../ops";
 import { googleStreamReason } from "../copyroute";
 import type { Account } from "../store";
@@ -234,7 +234,7 @@ export async function* rechunk(source: AsyncIterable<Uint8Array>, size: number):
 // ---- the per-file step --------------------------------------------------------
 
 type FileOutcome =
-  | { kind: "copied"; bytes: number; verified: "hash" | "size" | "converted"; id?: string; note?: string }
+  | { kind: "copied"; bytes: number; verified: "hash" | "size" | "converted"; id?: string; note?: string; /** Destination path of the new file. */ path?: string }
   | { kind: "skipped"; verified?: "hash" | "size" }
   | { kind: "failed"; error: string }
   | { kind: "unsupported"; reason: string }
@@ -358,14 +358,14 @@ async function streamFile(s: Slice, src: Entry, dest: EntryLite, name: string, r
   }
   const final = await s.dst.finishUpload(handle, done);
   // An imported file is a new native document: there are no bytes to compare with what was sent.
-  if (convertTo) return { kind: "copied", bytes: total, verified: "converted", id: final.id };
+  if (convertTo) return { kind: "copied", bytes: total, verified: "converted", id: final.id, path: final.path };
   const v = verify(src, final, total, hasher?.digest());
   if (!v.ok) {
     await s.dst.trash(final).catch(() => undefined);
     await appendAudit({ tool: "trash", account: s.dst.label, fileId: final.id, name: final.name, actor: s.actor, note: "transfer: copy failed verification" });
     return { kind: "failed", error: `verification failed (${v.error}); the destination copy was moved to trash` };
   }
-  return { kind: "copied", bytes: total - offset0, verified: v.level, id: final.id };
+  return { kind: "copied", bytes: total - offset0, verified: v.level, id: final.id, path: final.path };
 }
 
 async function transferOne(s: Slice, src: Entry, dest: EntryLite, nameOverride?: string): Promise<FileOutcome> {
@@ -563,7 +563,8 @@ async function runCross(s: Slice, c: CrossCursor, o: RunOpts): Promise<TransferR
         slice.converted++;
         if (converted.length < MAX_REPORTED) converted.push({ path, note: CONVERTED_NOTE });
       }
-      if (out.id && created.length < MAX_REPORTED) created.push({ path, id: out.id });
+      // The destination path, not the source path (live test round 4).
+      if (out.id && created.length < MAX_REPORTED) created.push({ path: out.path ?? path, id: out.id });
     } else if (out.kind === "skipped") {
       slice.skipped++;
       if (out.verified === "hash") slice.verifiedHash++;
@@ -857,7 +858,7 @@ async function googleToGoogle(a: TransferArgs, g: G2G, opts: TransferOpts): Prom
         folders: 0,
         bytes: srcTop.size ?? 0,
         exports: 0,
-        issues: [{ path: srcTop.path, issue: `${g.src.label} grants ${g.dst.label} temporary reader access to this one file (expires after ${TEMP_GRANT_TTL_MS / 3_600_000} h, removed right after the copy, audited)` }],
+        issues: [{ path: srcTop.path, issue: `${g.src.label} grants ${g.dst.label} temporary reader access to this one file (removed right after the copy, audited; ${TEMP_GRANT_EXPIRY_TEXT})` }],
         truncated: false,
         estimatedSlices: 1,
         note: "Nothing was written. One file, copied server-side by Drive.",
@@ -914,7 +915,7 @@ async function googleToGoogle(a: TransferArgs, g: G2G, opts: TransferOpts): Prom
       notes,
       converted: [],
       notCopied: [],
-      created: final ? [{ path: srcTop.path, id: final.id }] : [],
+      created: final ? [{ path: final.path, id: final.id }] : [],
       move: moveInfo,
       report: `Done: ${t.copied} copied, ${t.skipped} already present, ${t.failed} failed.${moveInfo ? (moveInfo.trashed ? " Source moved to trash." : ` Source not trashed: ${moveInfo.reason}`) : ""}`,
     };

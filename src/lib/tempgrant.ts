@@ -4,10 +4,12 @@
  *
  * The source account gives the destination account `reader` access (never
  * writer, no e-mail) on ONE file, the destination copies it with files.copy,
- * and the grant is removed again in a `finally`. Every grant carries an
- * `expirationTime` TEMP_GRANT_TTL_MS ahead as a safety net (Drive accepts one
- * on user permissions; when Drive refuses it for an account the grant is made
- * without it and the result says so). A folder is never shared: folder copies
+ * and the grant is removed again in a `finally`. Each grant asks for an
+ * `expirationTime` TEMP_GRANT_TTL_MS ahead as a safety net, but only where Drive
+ * allows one: consumer Gmail accounts refuse it ("Expiration dates cannot be set
+ * on this item", seen on every grant in the live tests), and the grant is then
+ * made without one and the result says so. On those accounts the protection is
+ * the immediate removal plus the leftover listing in `status`. A folder is never shared: folder copies
  * grant per file as each file is copied, so nothing broader than the file being
  * copied is exposed and nothing lingers when a client abandons a resume cursor.
  *
@@ -29,6 +31,11 @@ import { getStore } from "./store";
 /** How long a temporary grant may live if its removal fails (Drive removes it on its own then). */
 export const TEMP_GRANT_TTL_MS = 4 * 60 * 60 * 1000;
 export const TEMP_GRANT_ROLE = "reader";
+
+/** How dry runs and descriptions state the expiry: it is only set where the account allows one (R4-1). */
+export const TEMP_GRANT_EXPIRY_TEXT =
+  `expiry: only if the account allows it (${TEMP_GRANT_TTL_MS / 3_600_000} h where Drive accepts one, as on Google Workspace; consumer Gmail accounts refuse an expiry, ` +
+  "so there the grant relies on its immediate removal and the leftover check in status)";
 const OPEN = "tempgrants/open/";
 const CLOSED = "tempgrants/closed/";
 
@@ -74,7 +81,7 @@ function isExpiryRefusal(e: unknown): boolean {
 }
 
 /**
- * Give the destination account `reader` access to `file`, with an expiry, unless it can already see the file through
+ * Give the destination account `reader` access to `file`, with an expiry where Drive allows one, unless it can already see the file through
  * an explicit permission (that one is left as it is). Audited and registered.
  */
 export async function grantTemporaryRead(src: Ctx, dst: Ctx, file: DriveFile, meta: OpMeta & { tool: string }, now = new Date()): Promise<GrantOutcome> {

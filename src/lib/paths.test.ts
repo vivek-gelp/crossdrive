@@ -71,6 +71,16 @@ describe("PathResolver cache", () => {
     expect(await r.resolve("work", drive, ["A"])).toBe("f1");
     expect(drive.listChildren).toHaveBeenCalledTimes(2);
   });
+  it("forget(label) drops that account's entries only, so the next lookup after a move is fresh", async () => {
+    const drive = fakeDrive({ root: [folder("f1", "A", "root")] });
+    const r = new PathResolver(() => 0);
+    await r.resolve("work", drive, ["A"]);
+    await r.resolve("home", drive, ["A"]);
+    r.forget("work");
+    await r.resolve("work", drive, ["A"]);
+    await r.resolve("home", drive, ["A"]);
+    expect(drive.listChildren).toHaveBeenCalledTimes(3);
+  });
   it("builds a display path for a file from its parents chain", async () => {
     const drive = fakeDrive({ root: [folder("f1", "A", "root")], f1: [folder("f2", "B", "f1")] });
     const meta = vi.fn(async (id: string) =>
