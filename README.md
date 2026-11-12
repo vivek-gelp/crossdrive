@@ -23,6 +23,8 @@ It exists because built-in connectors see one Google account, fail silently when
 the model destructive tools with the safety rules living only in a prompt. Crossdrive puts the rules in code: trash is
 the only delete, mail is draft-only by default, every write is audited, and each account can be read-only.
 
+Not sure you need it? [Using several Google accounts with Claude: why it is hard, and four ways to do it](https://vivek-gelp.github.io/crossdrive/blog/several-google-accounts-with-claude.html) compares the options, including ones that need no new software.
+
 <!-- DEMO GIF: 20 seconds, recorded with a client that has actually been tested against Crossdrive, "copy the signed contract from my company drive into my personal drive" -->
 
 ## What you should know before you connect anything
