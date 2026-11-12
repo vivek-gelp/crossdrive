@@ -128,7 +128,7 @@ quickly; please open an issue if a row is out of date.
 | Search across accounts | No | Not documented | Not in OAuth 2.1 mode (one identity per session) | `find` fans out and reports per-account errors and `partial` |
 | Cross-account copy of folder trees | Not offered, to our knowledge | Not offered, to our knowledge | Not offered, to our knowledge | Yes, resumable; Drive's server-side copy from a writable source, streamed through your deployment from a read-only one |
 | Shared Drive items | Silent empty results in an open issue | The hosted Drive connector omits the same flags, per the same issue | Not assessed here | Supported; unreachable ones return an explicit error |
-| Gmail | Label, archive and trash requests are open | Draft only, no send | Send supported; a recipient allowlist is an open proposal | Per account: off, draft or send; draft is the default; optional recipient allowlist |
+| Gmail | Drafts, send, reply and labels are documented; an open issue reports the label and archive tools not working for some users | Draft only, no send | Send supported; a recipient allowlist is an open proposal | Per account: off, draft or send; draft is the default; optional recipient allowlist |
 | Delete | Not assessed here | Not assessed here | Not assessed here | Trash only; no permanent delete tool exists |
 | Dynamic client registration | Not applicable | Not supported | Not assessed here | Yes, stateless OAuth 2.1 with PKCE |
 | Setup effort | None | Programme enrolment and an OAuth client flagged for AI agents (enforced from 11 November 2026) | Your own Google project plus a local or hosted install | Your own Google project plus a Vercel deploy |
