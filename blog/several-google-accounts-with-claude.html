@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Using several Google accounts with Claude: why it is hard, and four ways to do it — Crossdrive</title>
+<meta name="description" content="Claude's connectors see one Google account each. Why that is hard to fix, four honest ways to work across several accounts, and what to insist on from any tool that touches your files and mail.">
+<meta name="author" content="vivek-gelp">
+<link rel="canonical" href="https://vivek-gelp.github.io/crossdrive/blog/several-google-accounts-with-claude.html">
+<meta name="theme-color" content="#F7F5F0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E1116" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/svg+xml" href="../brand/crossdrive-mark.svg">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Crossdrive">
+<meta property="og:title" content="Using several Google accounts with Claude: why it is hard, and four ways to do it">
+<meta property="og:description" content="Why Claude's connectors see one Google account each, four honest ways to work across several, and what to insist on from any tool that touches your files and mail.">
+<meta property="og:url" content="https://vivek-gelp.github.io/crossdrive/blog/several-google-accounts-with-claude.html">
+<meta property="og:image" content="https://vivek-gelp.github.io/crossdrive/brand/social-card.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="Crossdrive logo: two overlapping rounded squares, teal and amber">
+<meta property="article:published_time" content="2026-11-12">
+<meta property="article:author" content="https://github.com/vivek-gelp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Using several Google accounts with Claude: why it is hard, and four ways to do it">
+<meta name="twitter:description" content="Why Claude's connectors see one Google account each, four honest ways to work across several, and what to insist on from any tool that touches your files and mail.">
+<meta name="twitter:image" content="https://vivek-gelp.github.io/crossdrive/brand/social-card.png">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Article","headline":"Using several Google accounts with Claude: why it is hard, and four ways to do it","description":"Why Claude's connectors see one Google account each, four honest ways to work across several, and what to insist on from any tool that touches your files and mail.","datePublished":"2026-11-12","dateModified":"2026-11-12","author":{"@type":"Person","name":"vivek-gelp","url":"https://github.com/vivek-gelp"},"publisher":{"@type":"Organization","name":"Crossdrive","logo":{"@type":"ImageObject","url":"https://vivek-gelp.github.io/crossdrive/brand/crossdrive-mark-512.png"}},"image":"https://vivek-gelp.github.io/crossdrive/brand/social-card.png","mainEntityOfPage":"https://vivek-gelp.github.io/crossdrive/blog/several-google-accounts-with-claude.html","inLanguage":"en"}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#0e1116;--paper:#f7f5f0;--teal:#12b5a6;--amber:#f5a524;--overlap:#0b6b63;
+--bg:var(--paper);--surface:#fff;--surface-2:#efece4;--text:var(--ink);--text-muted:#5a6068;--border:#dcd8cd;
+--accent:var(--overlap);--accent-contrast:#fff;--focus:var(--teal);
+--font-body:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+--font-display:"Space Grotesk",var(--font-body);
+--font-mono:ui-monospace,"SFMono-Regular","Cascadia Mono",Consolas,Menlo,monospace;
+--radius:10px;--radius-sm:6px;--measure:760px;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1116;--surface:#161a21;--surface-2:#1d222b;--text:#ece9e2;--text-muted:#9aa1ab;--border:#2a303a;--accent:#2fd4c3;--accent-contrast:#0e1116;--overlap:#0e8f84;color-scheme:dark}}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-body);font-size:17px;line-height:1.65;overflow-wrap:break-word}
+.wrap{width:100%;max-width:var(--measure);margin:0 auto;padding-left:16px;padding-right:16px}
+.skip{position:absolute;left:-999px;top:8px;background:var(--surface);color:var(--text);padding:8px 12px;border-radius:var(--radius-sm);z-index:10}
+.skip:focus{left:8px}
+header.wrap{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 20px;padding-top:20px;padding-bottom:20px}
+.brand{display:inline-flex;align-items:center}
+.brand img{height:30px;width:auto;display:block}
+.nav{display:flex;flex-wrap:wrap;gap:4px 18px;font-size:.95rem}
+.nav a{color:var(--text-muted);padding:6px 0}
+.nav a:hover{color:var(--text)}
+.nav a[aria-current]{color:var(--text)}
+main.wrap{padding-top:16px;padding-bottom:64px}
+article{max-width:70ch}
+h1,h2,h3{font-family:var(--font-display);line-height:1.2;letter-spacing:-.02em;margin:0 0 .5em}
+h1{font-size:clamp(1.75rem,6vw,2.6rem);font-weight:700}
+h2{font-size:clamp(1.3rem,4.2vw,1.6rem);font-weight:600;margin-top:2em}
+h3{font-size:1.1rem;font-weight:600;margin-top:1.6em}
+p{margin:0 0 1em}
+ul,ol{margin:0 0 1em;padding-left:1.25em}
+li+li{margin-top:.5em}
+a{color:var(--accent);text-underline-offset:3px}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:2px}
+code{font-family:var(--font-mono);font-size:.88em;background:var(--surface-2);border:1px solid var(--border);border-radius:4px;padding:.1em .35em;overflow-wrap:anywhere}
+.byline{color:var(--text-muted);font-size:.95rem;margin-bottom:2em}
+.back{margin-top:2.5em;padding-top:1.25em;border-top:1px solid var(--border);font-size:.95rem}
+footer.wrap{display:flex;flex-wrap:wrap;gap:8px 18px;padding-top:24px;padding-bottom:40px;border-top:1px solid var(--border);color:var(--text-muted);font-size:.875rem}
+footer.wrap a{color:var(--text-muted)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="wrap">
+  <a class="brand" href="../" aria-label="Crossdrive home">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="../brand/crossdrive-logo-dark.svg">
+      <img src="../brand/crossdrive-logo.svg" alt="Crossdrive" width="150" height="30">
+    </picture>
+  </a>
+  <nav class="nav" aria-label="Main">
+    <a href="./" aria-current="page">Blog</a>
+    <a href="https://github.com/vivek-gelp/crossdrive">GitHub</a>
+    <a href="https://github.com/vivek-gelp/crossdrive/tree/main/docs">Docs</a>
+    <a href="https://github.com/vivek-gelp/crossdrive/discussions">Discussions</a>
+  </nav>
+</header>
+
+<main id="main" class="wrap">
+<article>
+<h1>Using several Google accounts with Claude: why it is hard, and four ways to do it</h1>
+<p class="byline">By <a href="https://github.com/vivek-gelp">vivek-gelp</a> · <time datetime="2026-11-12">12 November 2026</time></p>
+<p>I have five Google accounts across several companies. When I started asking Claude to help with my files, I found it could see one of them at a time. This is what I learned trying to fix that, written for anyone in the same position, whether or not you ever use the tool I ended up building.</p>
+<h2 id="why-it-is-hard">Why it is hard</h2>
+<p>Three facts, all checked as of November 2026.</p>
+<p><strong>The connectors are one account each.</strong> The most-reacted open request on Claude's connector tracker asks to attach two connectors with the same URL for different Google accounts. It has 44 reactions and 24 comments, with no staff reply since April 2026 (<a href="https://github.com/anthropics/claude-ai-mcp/issues/178">anthropics/claude-ai-mcp #178</a>).</p>
+<p><strong>Failures are often silent.</strong> An open issue reports that the Drive connector leaves out the flags Google needs for Shared Drives, so a search there comes back empty instead of failing. It has 22 thumbs-up and more than 20 reports. One reporter's main request was a clear error, because an empty answer leads to wrong conclusions (<a href="https://github.com/anthropics/claude-code/issues/53442">anthropics/claude-code #53442</a>).</p>
+<p><strong>Google keeps organisations apart on purpose.</strong> Drive file ownership cannot be transferred to or from a user outside your organisation, such as a personal Google account or a user in another organisation (<a href="https://support.google.com/a/answer/1247799?hl=en">Google Workspace Admin Help</a>).</p>
+<p>So "several accounts" is not a missing button. It is a gap between one-identity connectors and an identity model that keeps accounts apart by design.</p>
+<h2 id="four-ways-to-do-it">Four ways to do it</h2>
+<h3 id="1-one-connector-and-switch-accounts-by-hand">1. One connector, and switch accounts by hand</h3>
+<p>Disconnect the connector and reconnect it as the other account when you need it. It costs nothing, needs no setup, and someone else hosts and maintains it.</p>
+<p>This is the right choice if you have one main account and only occasionally need another, or if you mostly read. What you give up: no search across accounts, no copying between them, and you have to remember which account is connected. The connector will not tell the model it looked in the wrong place.</p>
+<h3 id="2-share-folders-into-one-hub-account">2. Share folders into one "hub" account</h3>
+<p>Share the folders you care about from each account into one account, and connect only that one. No new software, and sharing as Viewer gives read-only access folder by folder.</p>
+<p>It is the right choice when the folders are few and stable. What breaks:</p>
+<ul>
+  <li><strong>Ownership.</strong> Files stay owned by the original account, and Google will not move ownership across organisations. What the hub sees under "Shared with me" is a view, not storage: if the owning account closes, those files go with it (<a href="https://support.google.com/drive/answer/2375057?hl=en">Google Drive Help</a>).</li>
+  <li><strong>Shared Drives.</strong> Items reached through sharing and Shared Drives are where the silent empty results above show up.</li>
+  <li><strong>Gmail.</strong> Mail does not share like a folder. The hub sees only its own mail unless you set up forwarding or delegation in every account, and each of those is a security decision of its own.</li>
+</ul>
+<h3 id="3-a-broader-community-google-workspace-mcp-server">3. A broader community Google Workspace MCP server</h3>
+<p><a href="https://github.com/taylorwilsdon/google_workspace_mcp">taylorwilsdon/google_workspace_mcp</a> is the most complete community server I know of: more than 120 tools across twelve Google products, including Docs editing, Sheets and Calendar. If you need more than Drive and Gmail, look here first.</p>
+<p>Multi-account is its documented weak spot, and the maintainer has explained why with care. In OAuth 2.1 mode one MCP session is bound to one Google identity, so an account parameter is ignored; in the older mode the model can read the wrong account and still report success (<a href="https://github.com/taylorwilsdon/google_workspace_mcp/issues/162">#162</a>). A pull request adding a separate OAuth client per account was closed unmerged in November 2026 (<a href="https://github.com/taylorwilsdon/google_workspace_mcp/pull/1103">PR #1103</a>), which is a reasonable call for auth code that many people depend on. Running one entry per account works in clients that allow it, but Claude's custom connectors allow one connector per URL.</p>
+<h3 id="4-crossdrive">4. Crossdrive</h3>
+<p>This is what I built. <a href="https://github.com/vivek-gelp/crossdrive">Crossdrive</a> is a self-hosted remote MCP server that gives an AI client one URL onto several Google Drive and Gmail accounts. Each account gets a label you choose, so a path reads <code>work:/Projects/2026</code>. <code>find</code> searches every account at once and names any account that failed. <code>copy</code> copies folder trees between accounts, resumably. Trash is the only delete, mail is draft-only by default, any account can be read-only, and every write is audited.</p>
+<p>The real costs:</p>
+<ul>
+  <li><strong>Your own Google Cloud OAuth client</strong>, with the Drive and Gmail APIs enabled.</li>
+  <li><strong>Self-hosting on Vercel</strong>: a deploy, a Blob store and two secrets you generate.</li>
+  <li><strong>Google's unverified-app notice.</strong> For personal Gmail accounts you will see "Google hasn't verified this app" once per account. You must publish the consent screen to Production, or Google expires the refresh tokens after 7 days. Workspace accounts can use an Internal consent screen and see no warning.</li>
+  <li><strong>Drive and Gmail only</strong> on Google. No Docs editing, Sheets formulas or Calendar.</li>
+  <li><strong>OneDrive and Dropbox are beta</strong>, tested against in-memory fakes of their APIs and never against live accounts.</li>
+  <li><strong>Limited client testing.</strong> Live tests used a scripted OAuth client in Chrome plus one check with the Claude desktop app. Other clients are untested.</li>
+</ul>
+<p>It is the right choice if you have several accounts, want one conversation to work across them, and are comfortable running a small deployment.</p>
+<h2 id="what-to-insist-on-whichever-you-choose">What to insist on, whichever you choose</h2>
+<p>Agents with file and mail access have already done real damage. In February 2026 an agent told only to suggest email deletions started bulk-deleting, ignored repeated messages to stop, and stopped only when its process was killed; its owner traced it to the instruction being lost when the context was compacted (<a href="https://simonwillison.net/2026/feb/23/summer-yue">Simon Willison</a>). A coding agent wiped a drive with a command flag that bypasses the Recycle Bin (<a href="https://www.techradar.com/ai-platforms-assistants/googles-antigravity-ai-deleted-a-developers-drive-and-then-apologized">TechRadar</a>), and another treated a failed <code>mkdir</code> as success and moved files into a folder that did not exist (<a href="https://arstechnica.com/information-technology/2025/07/ai-coding-assistants-chase-phantoms-destroy-real-user-data">Ars Technica</a>). A rule written in a prompt can be lost. A rule written in code cannot. So, from any tool:</p>
+<ul>
+  <li><strong>Trash-only delete.</strong> Mistakes become recoverable. Google says the full Gmail scope is needed only to delete permanently, so a tool that never asks for it cannot do it (<a href="https://support.google.com/cloud/answer/13463817?hl=en">Google</a>).</li>
+  <li><strong>Read-only where possible</strong>, per account and enforced by the server. It also limits what an instruction hidden in a document can do.</li>
+  <li><strong>Drafts, not sends.</strong> Mail the model reads can carry hidden instructions; a draft waits for you (<a href="https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/">the "lethal trifecta"</a>).</li>
+  <li><strong>A log you can read</strong>: what changed, in which account, when.</li>
+  <li><strong>Errors that say which account failed.</strong> A silent empty result is how wrong conclusions start.</li>
+  <li><strong>Your own OAuth client.</strong> Your refresh tokens stay in your own project instead of with a third party.</li>
+</ul>
+<h2 id="what-a-first-real-deployment-taught-me">What a first real deployment taught me</h2>
+<p>Before telling anyone, I tested Crossdrive over four rounds on real accounts: two consumer Gmail accounts and one Workspace account in read-only mode, through the real consent screen in an unmodified Chrome. It broke in three ways that mattered.</p>
+<ul>
+  <li><strong>The consent screen could not be approved in Chrome.</strong> The page sent a no-referrer policy, so Chrome sent <code>Origin: null</code> on the Approve button, and the server refused it. No OAuth client could connect. The approval is now bound to a short-lived cookie set when the screen is shown, as well as a signed token.</li>
+  <li><strong>A read-only account received a temporary edit grant as a copy source.</strong> Copying out of it gave the destination writer access to the source file, or the whole folder. Read-only sources are now streamed through the server with no permission added; writable sources grant reader on one file at a time, removed straight away and audited.</li>
+  <li><strong>A mistyped argument put a folder in the wrong place.</strong> <code>mkdir</code> was given <code>path</code> instead of <code>parentPath</code>; the unknown argument was ignored and the folder landed at the My Drive root. Unknown arguments are now refused with a "did you mean" hint.</li>
+</ul>
+<p>All three are fixed in <a href="https://github.com/vivek-gelp/crossdrive/blob/main/docs/CHANGELOG.md">1.0.1</a>. The lesson for anyone building these tools: none of this would have shown up in a demo. Test against real accounts in a real browser before you announce anything, make the server refuse what it does not understand, and publish what you have not tested as plainly as what you have.</p>
+<h2 id="thank-you">Thank you</h2>
+<p>Thank you to the people who documented this problem in public issue trackers. Your write-ups showed me I was not alone, and they shaped every safety rule above. Thank you to the maintainers of the tools Crossdrive builds on: the Model Context Protocol TypeScript SDK, mcp-handler, Next.js, jose, zod and the PDF and Office parsers. And thank you to the google_workspace_mcp maintainer, whose explanations of the multi-account limits taught me a great deal.</p>
+<p>If you try Crossdrive and get stuck, <a href="https://github.com/vivek-gelp/crossdrive/issues">open an issue</a> and I will help. If it is not right for you, I hope one of the other options above is.</p>
+<ul>
+  <li>Code and README: <a href="https://github.com/vivek-gelp/crossdrive">https://github.com/vivek-gelp/crossdrive</a></li>
+  <li>Google setup: <a href="https://github.com/vivek-gelp/crossdrive/blob/main/docs/setup-google.md">https://github.com/vivek-gelp/crossdrive/blob/main/docs/setup-google.md</a></li>
+  <li>Security model: <a href="https://github.com/vivek-gelp/crossdrive/blob/main/docs/security.md">https://github.com/vivek-gelp/crossdrive/blob/main/docs/security.md</a></li>
+  <li>Project site: <a href="https://vivek-gelp.github.io/crossdrive/">https://vivek-gelp.github.io/crossdrive/</a></li>
+</ul>
+<p class="back"><a href="./">All posts</a> · <a href="../">Crossdrive home</a></p>
+</article>
+</main>
+
+<footer class="wrap">
+  <a href="https://github.com/vivek-gelp/crossdrive/blob/main/LICENSE">MIT licence</a>
+  <a href="https://github.com/vivek-gelp/crossdrive/blob/main/SECURITY.md">Security policy</a>
+  <a href="https://github.com/vivek-gelp/crossdrive">GitHub</a>
+</footer>
+</body>
+</html>

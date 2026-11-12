@@ -1,0 +1,6 @@
+# Crossdrive project site. Note: this file is served at /crossdrive/robots.txt on a GitHub Pages project site;
+# crawlers read robots.txt only at the host root, so the sitemap is also worth submitting in search consoles directly.
+User-agent: *
+Allow: /
+
+Sitemap: https://vivek-gelp.github.io/crossdrive/sitemap.xml
