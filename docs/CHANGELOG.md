@@ -16,6 +16,7 @@ Fixes for traps found in a first real deployment. No environment variable or red
 - Setup docs updated to match (README, setup-vercel, setup-google troubleshooting for `invalid_client`, `.env.example`).
 - The display font is bundled with the repo; builds no longer fetch Google Fonts (a redeploy failed on that).
 - Patched transitive dependencies: postcss, zod, minimatch.
+- Every route now sends `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy` and `Permissions-Policy` headers.
 
 ## 1.0.0 - Crossdrive (2026-11-10)
 
