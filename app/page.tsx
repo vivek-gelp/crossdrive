@@ -19,8 +19,8 @@ const WHAT = [
     body: "Search and read mail in each connected Gmail account, save attachments to the right folder, and prepare replies. Sending stays off until you turn it on per account.",
   },
   {
-    title: "Works from your phone",
-    body: "It is a remote MCP server: one URL works in Claude, ChatGPT and any MCP client, on desktop, web and the mobile apps.",
+    title: "One URL for your AI clients",
+    body: "It is a remote MCP server with OAuth, meant for any client that can add one, such as Claude, Claude Code or ChatGPT. The live tests used a scripted OAuth client in Chrome; those apps have not been tried against it yet.",
   },
 ];
 
@@ -31,7 +31,7 @@ const SAFETY = [
   },
   {
     title: "Read-only accounts",
-    body: "Mark any account read-only and the server rejects every write to it, whatever the assistant asks for.",
+    body: "Mark any account read-only and the server rejects every write to it, whatever the assistant asks for. Copying out of it streams the files, so not even a temporary permission is added.",
   },
   {
     title: "Dry run, then undo",
@@ -39,7 +39,7 @@ const SAFETY = [
   },
   {
     title: "Audit log",
-    body: "Each write is recorded with time, client, account, action and file ids. File contents and mail bodies are not logged.",
+    body: "Each write is recorded with time, client, account, action and file ids; mail entries add recipients and subject. File contents and mail bodies are not logged.",
   },
   {
     title: "Per-client consent",
@@ -70,7 +70,7 @@ export default function Home() {
           </a>
         </div>
 
-        <div className="demo" role="img" aria-label="Example: an assistant previews and then applies a move of 12 invoices between two drives">
+        <div className="demo" role="img" aria-label="Example: an assistant previews and then runs a copy of an invoices folder from one drive to another">
           <div className="demo-bar">
             <i style={{ background: "var(--teal)" }} />
             <i style={{ background: "var(--amber)" }} />
@@ -79,26 +79,26 @@ export default function Home() {
           <div className="demo-body">
             <p>
               <span className="you">you</span>
-              {"\n"}Move last year&apos;s invoices from my personal drive to the company drive.
+              {"\n"}Copy last year&apos;s invoices from my personal drive into the company drive.
             </p>
             <p>
-              <span className="who">crossdrive · batch move · dry run</span>
+              <span className="who">crossdrive · copy · dry run</span>
               {"\n"}from personal:/Invoices/2025
-              {"\n"}to{"   "}work:/Finance/Invoices/2025
-              {"\n"}12 files · 48 MB · 0 conflicts
+              {"\n"}to{"   "}work:/Finance/Invoices
+              {"\n"}12 files · 1 folder · nothing written yet
             </p>
             <p>
               <span className="who">assistant</span>
-              {"\n"}12 invoices, 48 MB, no name clashes. Nothing is deleted. Apply?
+              {"\n"}One folder with 12 invoices. The originals stay where they are. Copy?
             </p>
             <p>
               <span className="you">you</span>
               {"\n"}Yes.
             </p>
             <p>
-              <span className="who">crossdrive · batch move</span>
+              <span className="who">crossdrive · copy</span>
               {"\n"}
-              <span className="ok">applied · 12 moved · undo id a1f3</span>
+              <span className="ok">done · 12 copied · 0 failed · audited</span>
             </p>
           </div>
         </div>

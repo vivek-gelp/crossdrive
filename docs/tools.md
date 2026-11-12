@@ -10,6 +10,16 @@ run: `upload_begin`/`upload_finish`, `transfer_ownership`, `shortcut`, `mail_dra
 The Drive, Gmail and sharing tools work on Google accounts only; given a OneDrive or Dropbox label they return an error
 that points to the `cloud_*` tools and `transfer`.
 
+**Unknown arguments are rejected.** Every tool, including each item of a `batch` and nested objects such as `saveTo`,
+refuses an argument it does not know, before anything runs. The error names the unknown argument, lists the accepted
+ones and suggests the likely intended one, for example `unknown argument "path" (did you mean "parentPath"?)`. Argument
+names differ between tools (`mkdir` takes `parentPath`, `put` and `list` take `path`, `move` and `copy` take `toPath`),
+so read the error rather than retrying blindly. (Before 1.0.1 an unknown argument was silently ignored.)
+
+**Destinations are explicit.** `mkdir` needs `parentPath` or `parentId`, `move` needs `toPath` or `toFolderId`, `copy`
+needs `toPath` or `toFolderId`, and `upload_begin` needs `path` or `folderId`; for the My Drive root pass `label:/`.
+Only `put` (and saving a mail attachment with `saveTo`) has a default: the configured inbox folder.
+
 ## Addressing
 
 - `label:/Folder/Sub` walks My Drive from the root of the account called `label`.
@@ -22,7 +32,10 @@ that points to the `cloud_*` tools and `transfer`.
 - Labels match `^[a-z][a-z0-9-]{0,23}$`. Names are folder and file names only.
 
 Every Drive result carries `path`, `owner` (an email, `me`, or `unknown` when Drive withholds the owner of an item
-shared with the account), `shared` (owned by someone else) and `canEdit`. Shared Drive items count as `me`. File and
+shared with the account), `shared` and `canEdit`. `shared: true` means the item is owned by someone else and reached through sharing; it does not
+mean "this file has collaborators" (a file you own and have shared with others is `shared: false`). `canEdit` is
+Drive's own permission for the account; an account set to read-only in Crossdrive still refuses every write even where
+`canEdit` is true. Shared Drive items count as `me`. File and
 mail content in results is wrapped and labelled as untrusted data. `mkdir`, `put`, `move`, `rename`, `trash` and `untrash`
 return the `auditId` of their audit entry (the id `undo` takes).
 
@@ -53,15 +66,15 @@ return the `auditId` of their audit entry (the id `undo` takes).
 
 | Tool | Access | Description |
 |---|---|---|
-| `mkdir` | write | Create a folder; idempotent |
+| `mkdir` | write | Create a folder inside `parentPath` or `parentId` (required); idempotent |
 | `put` | write | Upload small text or base64 content, or stream an https `sourceUrl` into Drive server-side (200 MB cap). Without `mimeType` the type comes from the file extension (`sourceUrl`: the server's Content-Type). Defaults to the inbox folder, which is created at the root of My Drive when missing |
-| `upload_begin` | write | Validates the name and access and returns a pre-authorised Drive resumable-upload URL; the client sends the bytes straight to Google |
+| `upload_begin` | write | Validates the name and access and returns a pre-authorised Drive resumable-upload URL for the folder in `path` or `folderId` (required); the client sends the bytes straight to Google |
 | `upload_finish` | write | Fetches the finished file's metadata and writes the audit entry |
-| `move` | write | Move a file or folder within one account |
+| `move` | write | Move a file or folder within one account to `toPath` or `toFolderId` (required) |
 | `rename` | write | Rename a file or folder |
 | `trash`, `untrash` | write | Move to or restore from trash. Trash is the only delete |
 | `undo` | write | Reverse a move, rename, trash or untrash recorded in the audit log (by entry `id` or `batchId`); refuses copies, uploads, sharing and mail |
-| `copy` | write | Copy a file or a whole folder tree, within or across accounts. Folder copies are breadth-first and sliced; pass the returned `resume` cursor back until `done` is true. Existing items with the same name and size are skipped. Across Google accounts with a writable source: a temporary `reader` grant on one file at a time (4-hour expiry, removed right after, audited; `method: "share"`). With a read-only source, or a file only writers may copy: streamed through the server, with nothing written to the source (`method: "stream"`; Docs/Sheets/Slides are converted by export/import, Forms and other types without an import are listed in `notCopied`). The dry run reports the method per file. `trashOriginal` makes a cross-account move (refused for a read-only source). See [security.md](security.md#cross-account-copies-google-to-google) |
+| `copy` | write | Copy a file or a whole folder tree, within or across accounts. Folder copies are breadth-first and sliced; pass the returned `resume` cursor back until `done` is true. Existing items with the same name and size are skipped. Across Google accounts with a writable source: a temporary `reader` grant on one file at a time, removed right after the copy and audited (`method: "share"`). An expiry is set on the grant only where Google allows one (Google Workspace); consumer Gmail accounts refuse it, so there the protection is the immediate removal plus the leftover listing in `status`. With a read-only source, or a file only writers may copy: streamed through the server, with nothing written to the source (`method: "stream"`; Docs/Sheets/Slides are converted by export/import, Forms and other types without an import are listed in `notCopied`). The dry run reports the method per file. `trashOriginal` makes a cross-account move (refused for a read-only source). See [security.md](security.md#cross-account-copies-google-to-google) |
 | `batch` | write | Up to 100 `move`, `rename`, `trash`, `copy` and `mkdir` operations. `dryRun` (default) previews with mutation counts; executing runs sequentially with per-item status and one `batchId` |
 
 ## Sharing

@@ -74,7 +74,7 @@ class CrossdriveClient {
   }
 
   async init() {
-    const r = await this.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "crossdrive-bulk-upload", version: "1.0.0" } });
+    const r = await this.rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "crossdrive-bulk-upload", version: "1.0.1" } });
     if (r.error) throw new Error(`initialize: ${r.error.message}`);
     await this.rpc("notifications/initialized", {}, { notification: true }).catch(() => undefined);
     return r.result;

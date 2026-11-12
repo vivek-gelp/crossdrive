@@ -2,95 +2,120 @@
 
 ## 1.0.1 (2026-11-12)
 
-Fixes for traps found in a first real deployment and in the first live acceptance test. No environment variable or
-redirect URI changes are required.
+**Upgrade if you run 1.0.0.** Two problems in 1.0.0 matter to every user:
 
-**Upgrade if you run 1.0.0:** its consent screen could not be approved in Chrome (and probably other Chromium
-browsers). Clicking Approve always ended on "Consent must be given from this site.", so no OAuth client (Claude, Claude
-Code, ChatGPT) could connect; only static bearer tokens worked. 1.0.1 fixes this.
+- **The consent screen could not be approved in Chrome** (and probably other Chromium browsers). Approve always ended
+  on "Consent must be given from this site.", so no OAuth client could connect; only static bearer tokens worked.
+- **A read-only account used as the source of a cross-account copy received a temporary writer grant.** `copy` and
+  `transfer` between two Google accounts gave the destination account *writer* access to the source file, or to the
+  whole source folder, even when the source account was set to read-only.
 
-Security and correctness:
+Both are fixed in 1.0.1, and the fixes were observed on live Google accounts. No environment variable or redirect URI
+changes are required.
 
-- **A read-only account was modified when it was the source of a cross-account copy.** Before this fix, `copy` and
-  `transfer` between two Google accounts gave the destination account a temporary *writer* permission on the source
-  file, or on the whole source folder, even when the source account was set to read-only. The item's `modifiedTime`
-  changed. A folder stayed shared as writer until the copy finished, or for good if the client stopped following the
-  resume cursor. A failed removal was ignored, and the grant for a single file was not audited. Now:
-  - A read-only source is never modified: the copy is streamed through the server (download as the source, chunked
-    resumable upload as the destination), files and folder trees alike, with the same resume cursor.
+### Security
+
+- **Read-only copy sources are never modified.** Before, the writer grant changed the item's `modifiedTime`, a folder
+  stayed shared as writer until the copy finished (or for good if the client stopped following the resume cursor), a
+  failed removal was ignored, and the grant for a single file was not audited. Now:
+  - A read-only source is streamed through the server (download as the source, chunked resumable upload as the
+    destination), files and folder trees alike, with the same resume cursor. No permission is created on it.
   - Google Docs/Sheets/Slides from a read-only source are exported to docx/xlsx/pptx and imported back as native files,
     flagged "converted (export/import): comments, revision history and some formatting are not preserved". Forms and
     other types without an import path, and shortcuts, are listed in `notCopied` with the reason. The dry run predicts
     all of this.
-  - A writable source grants `reader` (never writer) on one file at a time, with a 4-hour `expirationTime`, and removes
-    it in a `finally` path. Folders are never shared. A file with `copyRequiresWriterPermission` is streamed instead. A
-    removal that fails is reported loudly with the permission id and the `unshare` call that removes it.
+  - A writable source grants `reader` (never writer) on one file at a time and removes it in a `finally` path. Folders
+    are never shared. A file with `copyRequiresWriterPermission` is streamed instead. A removal that fails is reported
+    loudly with the permission id and the `unshare` call that removes it.
+  - An expiry is set on that grant only where Google allows it (Google Workspace). Consumer Gmail accounts refuse one,
+    so there the protection is the immediate removal plus the leftover listing in `status`; the dry run says "expiry:
+    only if the account allows it". (Earlier 1.0.1 builds promised a 4-hour expiry in every case.)
   - Every temporary grant and removal is audited (`temp_grant`, `temp_grant_removed`, `temp_grant_remove_failed`).
   - `status` and `permissions` list leftover grants after checking them against Drive.
   - A folder copy resumed with a cursor from an earlier 1.0.1 build removes the old folder-wide writer share first.
-
-  The `copy` result now has `method` (`same`, `share` or `stream`). Streamed copies return the transfer engine's
-  counters (`copied`, `converted`, `notCopied`, `resume`). See
-  [security.md](security.md#cross-account-copies-google-to-google).
-- `duplicates` with `acrossAccounts` could not be narrowed. It ignored `path` and `folderId`, sorted groups largest
-  first, and was cut at the 60,000-character result limit, so small duplicates never appeared. Now `path`/`paths`
-  (`label:/folder`) or `account` + `folderId` limit an account to one folder tree, and `accounts` picks the accounts.
-  Groups come `limit` at a time (default 25) with `page.totalGroups`, `page.hasMore` and a `page.cursor` for the next
-  page, so nothing is cut silently. Accounts are scanned in parallel, at most four at a time.
-- Consent screen: the page sent `Referrer-Policy: no-referrer`, which makes Chrome send `Origin: null` on the form
+  - `trashOriginal` / `move: true` from a read-only source, and any copy or transfer into a read-only account, are
+    refused, dry runs included.
+- **Unknown tool arguments are rejected instead of ignored.** In 1.0.0 an argument a tool did not know was dropped
+  silently; in a live test `mkdir {path: ...}` (it takes `parentPath`) created the folder at the My Drive root. Every
+  tool, including batch items and nested objects such as `saveTo`, now refuses an unknown argument before anything runs,
+  names it, lists the accepted ones and suggests the likely intended one ("did you mean parentPath?").
+- **Write destinations are explicit.** `mkdir` needs `parentPath` or `parentId`, `move` (also in `batch`) needs `toPath`
+  or `toFolderId`, and `upload_begin` needs `path` or `folderId`. Before, `mkdir` defaulted to the My Drive root and
+  `move` to the inbox folder. `put` keeps its documented default, the inbox folder.
+- **Consent screen.** The page sent `Referrer-Policy: no-referrer`, which makes Chrome send `Origin: null` on the form
   POST, and the server refused that. The page now uses `strict-origin`, and the approval no longer depends on the
   `Origin` header alone: showing the page sets a short-lived, HttpOnly, SameSite=Lax cookie that the signed consent
   token is bound to, and Approve needs both. A request from another site is still refused, and each consent screen can
   be answered only once. Approve in the same browser that showed the screen, with cookies enabled for the site.
 - The connect page's form check had the same weakness (`Origin: null` refused); it now relies on its session-bound
   token in that case and still refuses other sites.
-- Read-only mode, mail mode and disconnects apply at once. In 1.0.0 each server instance cached the account list for up
-  to 60 seconds, so a write could still go through on an account that had just been switched to read-only (seen in the
-  test: a folder was created). Every write now reads the account's mode fresh.
+- **Read-only mode, mail mode and disconnects apply at once.** In 1.0.0 each server instance cached the account list
+  for up to 60 seconds, so a write could still go through on an account that had just been switched to read-only (seen
+  in a live test: a folder was created). Every write now reads the account's mode fresh.
 - Authorization codes can be redeemed only once; a second redemption gets `invalid_grant`. Refresh tokens are
   unchanged (not rotated), so one client can still refresh from several processes at once.
+- Every route sends `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy` and `Permissions-Policy`
+  headers.
+- Patched transitive dependencies: postcss, zod, minimatch.
 
-Fixes:
+### Fixed
 
-- `audit` took about 55 seconds on a young log (a client could time out); it now lists the days that have entries once instead of
-  probing all 60 days one by one, and stops once it has enough entries. Old per-day log files are still read.
+- `audit` took about 55 seconds on a young log (a client could time out); it now lists the days that have entries once
+  instead of probing all 60 days one by one, and stops once it has enough entries. Old per-day log files are still read.
+- `duplicates` with `acrossAccounts` could not be narrowed: it ignored `path` and `folderId`, sorted groups largest
+  first, and was cut at the 60,000-character result limit, so small duplicates never appeared. Now `path`/`paths`
+  (`label:/folder`) or `account` + `folderId` limit an account to one folder tree, and `accounts` picks the accounts.
+  Groups come `limit` at a time (default 25) with `page.totalGroups`, `page.hasMore` and a `page.cursor`, so nothing is
+  cut silently. Accounts are scanned in parallel, at most four at a time.
 - `put` with `contentBase64` and no `mimeType` stored PDFs and Office files as `text/plain`; the type now comes from the
   file extension. `put` also returns its `auditId`.
-- `find` no longer returns an item twice across pages, and each page is sorted newest first. Drive returns full-text
-  matches in relevance order, so pages are not in date order across each other (now documented).
+- `find` no longer returns an item twice across pages, and each page is sorted newest first.
 - `drives` on a consumer Gmail account returns the promised note with its empty list.
-- Items whose owner Drive does not reveal were reported as yours (`owner: "me"`, `shared: false`); they are now
-  `owner: "unknown"`, `shared: true`.
+- Items whose owner Drive does not reveal were reported as yours (`owner: "me"`, `shared: false`); only
+  `ownedByMe: true` or an owner entry matching the account now counts as "me", Shared Drive items show
+  `shared drive "<name>"` as owner, and anything from "Shared with me" is always `shared: true`.
 - A read-only client that asks `mail_read` / `mail_attachment` to save to Drive gets a clear error instead of having the
   request silently ignored.
+- `transfer` with `dryRun` refuses a read-only destination (or a read-only source with `move: true`) exactly like the
+  real run, instead of reporting no issues.
+- `transfer` results list the destination path of each created file in `created[]`, not the source path.
+- After a move, rename or trash, the server instance that made it drops its cached paths for that account, so its next
+  results show the new paths. Other instances can still show an old path for up to five minutes.
 - An invalid or expired bearer token gets "Invalid or expired access token" instead of "No authorization provided".
+- Pressing Back after answering the consent screen shows "This request was already answered" (HTTP 409) instead of
+  sending the client a `server_error`.
 - The consent screen is styled (the page's security policy had blocked the site stylesheet).
 - `/connect` no longer tells you to open `/connect` when no account is connected.
 - `read` on an xlsx lists the workbook's sheet names.
-- `shared` (and every result's `owner`/`shared`) no longer reports an item as yours when Drive omits `ownedByMe`: only `ownedByMe: true` or an owner entry matching the account counts as "me", Shared Drive items show `shared drive "<name>"` as owner, and anything from "Shared with me" is always `shared: true`.
-- `transfer` with `dryRun` now refuses a read-only destination (or a read-only source with `move: true`) exactly like the real run, instead of reporting no issues.
-- Pressing Back after answering the consent screen shows "This request was already answered" (HTTP 409) instead of sending the client a `server_error`.
-- Docs: the audit log stores mail recipients and subjects; tools that take `account` need it even with a labelled path;
-  connecting several Google accounts needs each signed in to the browser.
+- The display font is bundled with the repo; builds no longer fetch Google Fonts (a redeploy failed on that).
+
+### Changed
+
+- `copy` results have `method` (`same`, `share` or `stream`). Streamed copies return the transfer engine's counters
+  (`copied`, `converted`, `notCopied`, `resume`).
 - `/connect` separates signing in from connecting: the add-account form comes first, a progress line shows the three
   steps, a notice says when the signed-in e-mail is not connected yet (with a one-click connect), and each connection
   or failed consent ends on a banner naming the e-mail, label and access, or the reason.
-
-Earlier in 1.0.1:
-
 - `CROSSDRIVE_BASE_URL` is optional on Vercel: when it is unset, Crossdrive uses Vercel's production domain
   (`VERCEL_PROJECT_PRODUCTION_URL`), so the first deploy no longer needs a second deploy to set it. An explicit value
   still wins; set it for a custom domain. `/setup`, `/health` and the `status` tool show the Vercel value as passing, and
-  the "host differs" warning now shows the current value and says it must be the deployment's own address, not the
-  GitHub repository URL. The Deploy button no longer asks for it.
+  the "host differs" warning shows the current value and says it must be the deployment's own address, not the GitHub
+  repository URL. The Deploy button no longer asks for it.
 - `/setup` checks the shape of `GOOGLE_CLIENT_ID` (must end in `.apps.googleusercontent.com`) and
   `GOOGLE_CLIENT_SECRET` (not empty, no whitespace, no placeholder text such as `PASTE_CLIENT_ID`), without printing
   either value. A secret without the `GOCSPX-` prefix is marked "check", not "fail". `/connect` and the sign-in routes
   show a configuration error pointing to `/setup` instead of sending you to Google's "Error 401: invalid_client".
-- Setup docs updated to match (README, setup-vercel, setup-google troubleshooting for `invalid_client`, `.env.example`).
-- The display font is bundled with the repo; builds no longer fetch Google Fonts (a redeploy failed on that).
-- Patched transitive dependencies: postcss, zod, minimatch.
-- Every route now sends `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy` and `Permissions-Policy` headers.
+
+### Docs
+
+- README: a "What has been tested" section (four live rounds on 12 November 2026), the list of what has not been
+  verified live, and the limits found in those rounds.
+- The temporary-grant expiry is described as it behaves: set only where Google allows it.
+- The audit log stores mail recipients, subjects and attachment names; tools that take `account` need it even with a
+  labelled path; connecting several Google accounts needs each signed in to the browser; `shared` means "owned by
+  someone else", not "has collaborators"; argument names differ between tools, and unknown ones are rejected.
+- Setup docs updated for the base-URL and client-id checks (README, setup-vercel, setup-google troubleshooting for
+  `invalid_client`, `.env.example`).
 
 ## 1.0.0 - Crossdrive (2026-11-10)
 

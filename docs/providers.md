@@ -119,8 +119,11 @@ transfer { from: "work:/Reports", to: "client-a:/Inbox", move: false, dryRun: tr
 - **Move** trashes the source top item only on the final call and only if no item in the whole transfer failed or was
   left behind. Otherwise the report explains why nothing was trashed. Items added to the source while a transfer is
   running may not be copied before the move trashes the source, so do not edit a tree while moving it.
-- **Google → Google** is delegated to the existing server-side Drive copy, so no bytes pass through the server. Drive
-  copies are checked by size and md5 for single files only.
+- **Google → Google** is delegated to the `copy` engine. From a writable source it is Drive's server-side copy (no
+  bytes pass through the server); from a read-only source, or a file only writers may copy, the file is streamed
+  through the server and the source is never modified. See
+  [security.md](security.md#cross-account-copies-google-to-google). Google to Google is the only part of `transfer`
+  that has been run against live accounts.
 
 ### Limits applied by the dry run and the transfer
 

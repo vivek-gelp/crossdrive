@@ -40,5 +40,5 @@ apps.
   push protection.
 - Branch protection on `main`: require the CI check to pass, require pull requests.
 - General: enable "Automatically delete head branches".
-- Add a release `v1.0.0` from the 1.0.0 changelog entry once the first push is verified.
+- Add the release `v1.0.1` from `launch/release-notes-1.0.1.md` once the push is verified.
 - Pin the repository on your profile.

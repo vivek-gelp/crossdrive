@@ -66,7 +66,9 @@ valid until it expires (90 days) or `CROSSDRIVE_JWT_SECRET` is rotated.
 - Disconnecting a Google account revokes its refresh token at Google (a Dropbox account: at Dropbox). Microsoft has no
   endpoint that revokes one delegated refresh token, so disconnecting a OneDrive account deletes the stored token and
   you remove the app's consent in the Microsoft account yourself. "Disconnect everything" does this for every account
-  and is available from a phone browser. A revocation that fails is reported, and the account is removed anyway.
+  and needs only a browser. A revocation that fails is reported, and the account is removed anyway. Disconnect,
+  reconnect and "Disconnect everything" are covered by automated tests but have not yet been exercised against a live
+  deployment.
 - Static bearer tokens (`CROSSDRIVE_STATIC_TOKENS`) are full access; `CROSSDRIVE_READONLY_TOKENS` can only reach the read
   tools. Treat both like passwords and rotate them by editing the variable and redeploying.
 - Scopes are the minimum for the product: `drive`, and three Gmail scopes. None of them can permanently delete Gmail
@@ -84,7 +86,12 @@ Agents have deleted data they were told to leave alone. The rule is that safety 
 - Per-account read-only mode refuses writes before Google is called, and a read-only account used as the source of a
   cross-account copy is only read (see below). Write tools read the account's mode and mail
   mode fresh from storage on every call (not from a per-instance cache), so a change on the connect page applies to the
-  next call on every serverless instance.
+  next call on every serverless instance (observed live: about one second for read-only and mail-mode switches).
+- Unknown arguments are rejected, never ignored. Every tool schema, including batch items and nested objects, refuses
+  a key it does not know before the handler runs, and the error names the key and suggests the intended one. Before
+  1.0.1 an unknown key was dropped silently: in a live test `mkdir {path: ...}` (it takes `parentPath`) created the
+  folder at the My Drive root. Tools that create or place something (`mkdir`, `move`, `copy`, `upload_begin`) also
+  require their destination; only `put` and attachment saving default to the inbox folder, never to the root.
 - Most write tools accept `dryRun` (the full list is in [tools.md](tools.md)); `batch` and `transfer` preview by
   default, and `batch` reports mutation counts, so one approval covers a whole plan.
 - `undo` reverses moves, renames, trashes and untrashes using the audit log.
@@ -92,6 +99,7 @@ Agents have deleted data they were told to leave alone. The rule is that safety 
 - Failures are reported, never treated as success: `find` returns per-account errors and `partial`, unreachable Shared
   Drives return an explicit error, folder copies list failures.
 - The append-only audit log records each completed write: tool, account, affected item and actor, grouped by batch id.
+  Mail entries also carry the recipients, the subject and attachment file names; never bodies.
 
 ### Hosting and availability
 
@@ -115,20 +123,28 @@ resume cursor), a failed removal was ignored, and the single-file grant was not 
 - The source account grants the destination account `reader` access, never `writer`, on one file at a time. A folder
   is never shared: a folder copy grants per file as each file is copied, so nothing broader than the file being copied
   is exposed, and nothing stays shared between slices or after an abandoned copy.
-- Each grant carries an `expirationTime` 4 hours ahead as a safety net, and no notification e-mail.
+- No notification e-mail is sent. Crossdrive asks Drive for an `expirationTime` 4 hours ahead as a safety net, but an
+  expiry is set only where Google allows it (Google Workspace). Consumer Gmail accounts refuse it ("Expiration dates
+  cannot be set on this item"; seen on every grant in the live tests), so on those accounts the grant has no time
+  limit of its own and the protection is the immediate removal plus the leftover listing in `status`. The dry run says
+  "expiry: only if the account allows it".
 - The destination copies the file server-side with `files.copy`; no bytes pass through the server. Google Docs, Sheets
-  and Slides stay native. Comments and revision history are not copied (Drive's `files.copy` never copies them).
+  and Slides stay native (by design and in automated tests; not yet observed on live accounts). Comments and revision
+  history are not copied (Drive's `files.copy` never copies them).
+- Adding and removing the grant changes the file's `modifiedTime`. Observed live: each grant was removed within about
+  3 seconds, and a copy from a writable source costs about 3 to 4 seconds per file.
 - The grant is removed in a `finally` path, also when the copy fails. If the removal fails, the result carries a
   `warning` that starts with "TEMPORARY GRANT NOT REMOVED", names the permission id and gives the `unshare` call that
   removes it.
 - Every grant (`temp_grant`) and every removal (`temp_grant_removed`, or `temp_grant_remove_failed`) is in the audit log
-  with both accounts, the file id, the role, the permission id and the expiry.
+  with both accounts, the file id, the role, the permission id and the expiry (or "no expiration (refused by Drive)").
 - `status` and `permissions` (without `fileId`, or with `leftovers: true`) list grants Crossdrive created that Drive still
   shows. Each one is checked against Drive before it is reported. `permissions` on a file marks such a grant
   `temporary: true`.
 - If the destination account already has explicit access to the file, nothing is granted or removed.
 - If Drive refuses an expiration for a grant, the grant is made without one and the result says so. It is still removed
-  right after the copy.
+  right after the copy. If that removal also fails, nothing removes the grant on its own: act on the warning or on the
+  `status` listing.
 
 **Stream method (no permission change on the source).** This method is used when:
 
@@ -147,6 +163,11 @@ engine as cross-provider `transfer`.
   not preserved". Drive caps exports at 10 MB.
 - Native types with no import path (Forms, Sites, Drawings, Maps, ...) and shortcuts are not copied. They are listed in
   `notCopied` with the reason (for a single file, the copy is refused with that reason).
+- Observed live: binary files and folder trees from a read-only consumer account and from a read-only Workspace account
+  were streamed and hash-verified, with the source's permissions and `modifiedTime` unchanged, and a shortcut was listed
+  in `notCopied`. The Docs/Sheets/Slides conversion and the skipping of Forms and Drawings are covered by automated
+  tests only.
+- The bytes pass through your Vercel function, so they count against its run time and bandwidth.
 - The dry run reports which files will stream, which will be converted and which will be skipped.
 
 **Unchanged:** `trashOriginal` and `move: true` from a read-only source are refused, because trashing is a write. A copy

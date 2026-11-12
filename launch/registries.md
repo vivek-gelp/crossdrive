@@ -31,7 +31,7 @@ Anything marked UNCONFIRMED could not be established from a primary source.
 - Name: Crossdrive
 - Short description (95 characters, fits the registry's 100-character limit): Self-hosted MCP server: one URL for several Google Drive and Gmail accounts, trash-only delete.
 - Medium description (list entries): Self-hosted remote MCP server: one URL for several Google Drive and Gmail accounts with fan-out search, cross-account copy, trash-only delete and an audit log.
-- Long description: Crossdrive is a self-hosted remote MCP server that gives Claude, ChatGPT and other MCP clients one URL onto several Google Drive and Gmail accounts, addressed as `label:/path`. Fan-out search, resumable cross-account copy, batch with dry-run, undo, duplicates, Gmail search/read/draft/label, per-account read-only mode, append-only audit log, OAuth 2.1 with PKCE and dynamic client registration. Safety is enforced in code: trash is the only delete, mail is draft-only by default. OneDrive and Dropbox are beta and untested against live accounts.
+- Long description: Crossdrive is a self-hosted remote MCP server that gives MCP clients with remote-server and OAuth support (such as Claude, Claude Code or ChatGPT) one URL onto several Google Drive and Gmail accounts, addressed as `label:/path`. Fan-out search, resumable cross-account copy, batch with dry-run, undo, duplicates, Gmail search/read/draft/label, per-account read-only mode, append-only audit log, OAuth 2.1 with PKCE and dynamic client registration. Safety is enforced in code: trash is the only delete, mail is draft-only by default. OneDrive and Dropbox are beta and untested against live accounts.
 - Repository: https://github.com/vivek-gelp/crossdrive
 - Licence: MIT
 - Language: TypeScript (Next.js). Scope: cloud service. Deployment: bring-your-own Vercel.
@@ -186,7 +186,7 @@ with a placeholder URL):
     "url": "https://github.com/vivek-gelp/crossdrive",
     "source": "github"
   },
-  "version": "1.0.0",
+  "version": "1.0.1",
   "remotes": [
     {
       "type": "streamable-http",

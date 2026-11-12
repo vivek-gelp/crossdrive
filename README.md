@@ -13,9 +13,9 @@
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-remote%20server-5b4bdb.svg" alt="MCP remote server"></a>
 </p>
 
-Crossdrive is a self-hosted remote [MCP](https://modelcontextprotocol.io) server that gives Claude (web, desktop, phone),
-Claude Code, ChatGPT and any other MCP client one URL onto several Google Drive and Gmail accounts at once. You name
-each account with a label you choose, and files are addressed as `work:/Projects/2026` instead of "whichever Google
+Crossdrive is a self-hosted remote [MCP](https://modelcontextprotocol.io) server that gives an AI client one URL onto
+several Google Drive and Gmail accounts at once (OneDrive and Dropbox in beta). It is meant for any client that can add
+a remote MCP server with OAuth, such as Claude, Claude Code or ChatGPT. You name each account with a label you choose, and files are addressed as `work:/Projects/2026` instead of "whichever Google
 account this connector happens to be signed into". You run it in your own Vercel project with your own Google OAuth
 client, so your tokens and your files never touch anyone else's infrastructure.
 
@@ -23,7 +23,7 @@ It exists because built-in connectors see one Google account, fail silently when
 the model destructive tools with the safety rules living only in a prompt. Crossdrive puts the rules in code: trash is
 the only delete, mail is draft-only by default, every write is audited, and each account can be read-only.
 
-<!-- DEMO GIF: 20 seconds, phone app, "move the signed contract from my company drive into my personal drive" -->
+<!-- DEMO GIF: 20 seconds, recorded with a client that has actually been tested against Crossdrive, "copy the signed contract from my company drive into my personal drive" -->
 
 ## What you should know before you connect anything
 
@@ -32,7 +32,50 @@ the only delete, mail is draft-only by default, every write is audited, and each
 | **Scopes requested** | Drive (`drive`) and Gmail (`gmail.modify`, `gmail.compose`, `gmail.send`), per account, from your own Google Cloud project. No scope that permits permanent deletion is requested. |
 | **Where tokens live** | Refresh tokens are encrypted with AES-256-GCM and stored in a private Vercel Blob store in your own Vercel account. The key is an environment variable only you hold. |
 | **What is logged** | Every completed write: tool, account, affected item, actor. Mail entries also record the recipients, the subject and attachment file names. Never file contents, mail bodies or tokens. The log is append-only and readable through the `audit` tool. |
-| **Defaults** | No permanent delete (trash only). Mail is draft-only for new accounts. Any account can be switched to read-only on the connect page. A "disconnect everything" button revokes every token and works from a phone. |
+| **Defaults** | No permanent delete (trash only). Mail is draft-only for new accounts, and new accounts start read + write: switch a work account to read-only on its card right after connecting it. A "disconnect everything" button revokes every token. |
+
+## What has been tested
+
+As of 12 November 2026, version 1.0.1 has been tested live against real Google accounts: two consumer Gmail accounts
+and one Google Workspace account, the Workspace one in read-only mode, through four rounds on one Vercel deployment.
+The client was a scripted OAuth client that went through the real consent screen in an unmodified Chrome. The fixes in
+1.0.1 come from those rounds ([changelog](docs/CHANGELOG.md)).
+
+Verified live:
+
+- Setup and connecting: `/setup` and `/health` checks, client registration, the consent screen (Approve with full or
+  read-only access, Deny, single-use authorization codes, token refresh, a clear error for a bad token), connecting
+  three Google accounts under labels, and switching an account's mode and mail mode on `/connect` (in effect on the
+  next call, about one second later).
+- Reading: `accounts`, `status`, `list`, `find` across all three accounts with paging, `read` of a Google Doc, PDF,
+  xlsx and docx, `tree`, `changes`, `shared`, `drives`, `duplicates` within and across accounts, and `audit`.
+- Writing within an account: `mkdir`, `put` (text and binary files), `rename`, `move`, `trash`, `untrash`, `undo`,
+  and `batch`, including one batch across two accounts.
+- Across accounts: `copy` of single files and folder trees with the resume cursor, and `transfer` (copy and move) with
+  hash verification. From a writable source, each file got a temporary reader grant that was audited and removed within
+  seconds; folders were never shared; an abandoned folder copy left nothing shared. From a read-only source (consumer
+  and Workspace), files were streamed and the source's permissions and `modifiedTime` stayed unchanged.
+- Read-only accounts: every write tool, dry runs included, was refused before Google was called, and so was any copy or
+  transfer into a read-only account or a move out of one.
+- Gmail: search, read, labels, reading an attachment and saving it to Drive, drafts, labelling and trashing, sending
+  and replying in mode `send`, and the refusals in modes `draft` and `off`.
+- Paging of large `read` results, security headers, and the signed-out pages at phone width.
+
+Not yet verified live:
+
+- **OneDrive and Dropbox.** Never run against live accounts; beta, tested against in-memory fakes of their APIs only.
+- **AI client apps.** No Claude app (web, desktop or mobile), Claude Code or ChatGPT was used in the live tests; they
+  used a scripted OAuth client through real Chrome. The client setup steps below follow those clients' documentation.
+- **Google-native files on the streamed path.** Docs/Sheets/Slides export and re-import from a read-only source,
+  Docs/Sheets/Slides staying native on the server-side path, and Forms and Drawings being skipped are covered by
+  automated tests only.
+- **Disconnect, reconnect and "Disconnect everything"** (the kill switch).
+- **The recipient allowlist** (`CROSSDRIVE_MAIL_ALLOWED_RECIPIENTS`).
+- **The Deploy to Vercel button** from an account other than the repository owner's.
+- Also not exercised live beyond their read-only refusal: the sharing tools (`share`, `unshare`, `transfer_ownership`,
+  `shortcut`), large uploads (`upload_begin`, `scripts/bulk-upload.mjs`, `put` with `sourceUrl`), Shared Drive
+  contents (none of the test accounts had one), static bearer tokens, a writable Workspace account as a copy source,
+  and the signed-in `/connect` page at phone width.
 
 ## Deploy to Vercel
 
@@ -60,8 +103,9 @@ button creates a copy of the repo and needs a new name.
 4. **Connect your accounts** at `<your URL>/connect`, in two steps. First sign in with an e-mail from
    `CROSSDRIVE_ALLOWED_EMAILS`; this only opens the admin page and connects nothing. Then, in **Connect a cloud
    account**, pick a label (for example `work`, `personal`, `clientco`), click **Connect Google** and choose that
-   Google account. The page confirms each connection by e-mail and label. New accounts start as read + write with mail as drafts only; switch an account to
-   read-only or change its mail mode on its card. Repeat for each account. Google signs you in with the browser's own
+   Google account. The page confirms each connection by e-mail and label. New accounts start as read + write with mail
+   as drafts only; switch an account to read-only (do it right away for a work account) or change its mail mode on its
+   card. Repeat for each account. Google signs you in with the browser's own
    Google session: to connect several accounts, sign each of them in to the browser first (or be ready for Google to ask
    for that account's password).
 5. **Add the connector to your AI client** using `<your URL>/api/mcp` ([details below](#connecting-clients)), then ask:
@@ -76,7 +120,7 @@ quickly; please open an issue if a row is out of date.
 |---|---|---|---|---|
 | Several Google accounts under one URL | One account per connector; a request to attach two connectors to the same URL is open with no reply | Not documented as a feature | A documented weak spot: OAuth 2.1 mode binds one identity per session, and a per-account client pull request was closed unmerged in November 2026 | Yes: user-chosen labels, `label:/path` addressing |
 | Search across accounts | No | Not documented | Not in OAuth 2.1 mode (one identity per session) | `find` fans out and reports per-account errors and `partial` |
-| Cross-account copy of folder trees | Not offered, to our knowledge | Not offered, to our knowledge | Not offered, to our knowledge | Yes, resumable, no file bytes through the server |
+| Cross-account copy of folder trees | Not offered, to our knowledge | Not offered, to our knowledge | Not offered, to our knowledge | Yes, resumable; Drive's server-side copy from a writable source, streamed through your deployment from a read-only one |
 | Shared Drive items | Silent empty results in an open issue | The hosted Drive connector omits the same flags, per the same issue | Not assessed here | Supported; unreachable ones return an explicit error |
 | Gmail | Label, archive and trash requests are open | Draft only, no send | Send supported; a recipient allowlist is an open proposal | Per account: off, draft or send; draft is the default; optional recipient allowlist |
 | Delete | Not assessed here | Not assessed here | Not assessed here | Trash only; no permanent delete tool exists |
@@ -93,14 +137,17 @@ for people who have several accounts and want an AI to organise across them safe
 
 **Several accounts, one URL.** Label each account yourself (`^[a-z][a-z0-9-]{0,23}$`) and connect as many as you like.
 Paths are `label:/path` for My Drive, `label:~shared/Folder/...` for folders shared with the account, and
-`label:drive/<Shared Drive name>/...` for Shared Drives. Every result carries `owner`, `shared` and `canEdit`.
+`label:drive/<Shared Drive name>/...` for Shared Drives. Every result carries `owner`, `shared` and `canEdit`; `shared`
+means "owned by someone else and reached through sharing", not "this file has collaborators". Unknown arguments are
+rejected with a "did you mean" hint, and tools that create or place something need an explicit destination.
 
 **Search and organise.** `find` searches every Google account in parallel with timeouts and paging; an account that fails shows
 up as an error entry and the response is marked `partial` rather than returning less without saying so. Also `list`,
 `tree`, `duplicates` (including across accounts), `changes` (what changed in the last 24 hours or 7 days) and `inbox`.
 
-**Move things between accounts.** `copy` copies files and whole folder trees between accounts using Drive's server-side
-copy, in resumable slices. `batch` applies up to 100 moves, renames, trashes and copies with a dry-run preview and a
+**Move things between accounts.** `copy` copies files and whole folder trees between accounts in resumable slices:
+with Drive's server-side copy when the source account is writable, and by streaming through your deployment when it is
+read-only, so a read-only account is never modified. `batch` applies up to 100 moves, renames, trashes and copies with a dry-run preview and a
 single batch id. `undo` reverses a move, rename, trash or untrash using the audit log.
 
 **Gmail.** Search, read (bodies as plain text, never raw HTML), label, archive, trash, draft, reply, and save attachments
@@ -109,8 +156,8 @@ straight into Drive. Sending is off by default and can be limited to an allowlis
 **Large files.** `upload_begin` returns a pre-authorised Drive upload URL so the bytes go from your computer straight to
 Google. `scripts/bulk-upload.mjs` mirrors a local folder into a drive with skip-if-exists and resume.
 
-**Control from a phone.** The connect page lets you flip an account between read-only and write, reconnect it, disconnect
-it (which revokes the token at Google) or disconnect everything, from any browser.
+**Control from any browser.** The connect page lets you flip an account between read-only and write, change its mail
+mode, reconnect it, disconnect it (which revokes the token at Google) or disconnect everything.
 
 **Per-client consent.** Each MCP client that connects sees a consent screen naming the client and its redirect host, and
 can be downgraded to read-only. This is the MCP specification's answer to the confused-deputy problem. The approval is
@@ -174,8 +221,12 @@ are never relied on.
   applies to the very next call on every server instance. A read-only account can still be the *source* of a
   cross-account copy, and it is only read: the file is streamed through the server, and no permission is added to it.
   Before 1.0.1 it was not: the source got a temporary writer share. Writable sources share one file at a time, as
-  reader, with a 4-hour expiry, and every grant and removal is audited
-  ([details](docs/security.md#cross-account-copies-google-to-google)).
+  reader, and every grant and removal is audited. An expiry is set on that grant only where Google allows it (Google
+  Workspace); consumer Gmail accounts refuse one, so there the protection is the immediate removal plus the leftover
+  listing in `status` ([details](docs/security.md#cross-account-copies-google-to-google)).
+- **Unknown arguments are rejected.** A misnamed argument is an error that names it and suggests the right one, never
+  silently ignored, and `mkdir`, `move`, `copy` and `upload_begin` need an explicit destination. (In 1.0.0 `mkdir` with
+  `path` instead of `parentPath` created the folder at the My Drive root.)
 - **Mail modes** per account: `off`, `draft` or `send`. New accounts start at `draft`. Send can be restricted with
   `CROSSDRIVE_MAIL_ALLOWED_RECIPIENTS`. The sender is never inferred.
 - **Untrusted content.** File and mail content is returned wrapped and labelled as data, URLs found inside documents are
@@ -212,9 +263,12 @@ Because you create the OAuth client in your own Google Cloud project, Google tre
 
 Your MCP endpoint is `<your URL>/api/mcp`.
 
-- **Claude on the web, desktop and phone:** Settings, Connectors, Add custom connector, paste the URL. Claude discovers
-  the OAuth server, signs you in with an allowed email and shows you Crossdrive's consent screen; click Approve. Add the
-  connector on the web or desktop app; it is then available in the phone app.
+These steps follow each client's documentation. None of these apps has been used against Crossdrive in the live tests
+yet (see [What has been tested](#what-has-been-tested)); if one does not work, please open an issue.
+
+- **Claude on the web and desktop:** Settings, Connectors, Add custom connector, paste the URL. Claude discovers the
+  OAuth server, signs you in with an allowed email and shows you Crossdrive's consent screen; click Approve. Claude's
+  mobile apps use connectors added on the web or desktop.
 - **Claude Code:**
 
   ```bash
@@ -258,6 +312,29 @@ Copy `.env.example`. The legacy `VAULT_` prefix is still accepted for every `CRO
 
 ## Limits and non-goals
 
+- **Copy method.** Cross-account copies from a read-only account are streamed through your Vercel function: the bytes
+  pass through it and count against its run time and bandwidth.
+- **Google-native files from a read-only account.** Docs, Sheets and Slides are exported to docx, xlsx or pptx and
+  imported back; comments, revision history and some formatting are lost. Forms, Sites, Drawings and Maps are not
+  copied, and shortcuts are skipped. (Not yet observed live except for shortcuts.)
+- **Writable sources.** Cross-account copies from a writable account briefly add a reader permission for your other
+  account on each file, which changes the file's `modifiedTime`. On consumer Gmail accounts Drive refuses an expiry on
+  that permission, so if its removal failed it would have no time limit. Removal failures are reported and listed by
+  `status`.
+- **Speed.** A cross-account copy from a writable source takes about 3 to 4 seconds per file. Large folders need many
+  calls: a client must keep following the `resume` (or `cursor`) value until `done` is true.
+- **Comments and history.** Drive's server-side copy never copies comments or revision history, with either method.
+- **Fresh paths.** For a few minutes after a folder is moved, results from other server instances can still show the
+  old path, and path lookups of just-moved items can briefly fail. Use ids for follow-up calls right after moving
+  folders.
+- **Argument names differ between tools.** `mkdir` takes `parentPath`, `put` and `list` take `path`, `move` and `copy`
+  take `toPath`. An unknown argument is rejected with the accepted names, so a client can correct itself.
+- **New accounts start read + write with mail as drafts.** Set a work account read-only on its card immediately after
+  connecting it.
+- **Admin session.** The `/connect` sign-in lasts one hour. Each additional Google account must be signed in to the
+  same browser to connect it.
+- **`shared` flag.** `shared` on a result means "owned by someone else and visible through sharing", not "this file has
+  collaborators".
 - Drive and Gmail only on Google. No Docs editing, Sheets formulas, Calendar or Chat; use another server for those.
 - One owner per deployment. It is not a multi-tenant hosted service.
 - Folder copy runs in slices (the client follows a resume cursor) because serverless requests are time-limited.
