@@ -3,7 +3,7 @@ import { jwtEnv } from "./config";
 import { cookieValue, fetchSiteAllowed, originAllowed, sameToken } from "./csrf";
 import { issueConsent, TTL, verifyConsent, type ConsentClaims, type PendingConsent } from "./jwt";
 import { describeRedirect, issueCodeFor, OAuthError, redirectWithParams, SCOPE_FULL, SCOPE_READ } from "./oauth";
-import { onceKey, useOnce } from "./once";
+import { onceKey, redeemOnce } from "./once";
 
 /**
  * Per-client consent screen for Crossdrive's own OAuth (confused-deputy protection). After the owner signs in with Google,
@@ -162,7 +162,7 @@ export async function decideConsent(form: URLSearchParams, cookieHeader: string 
         "Start the connection again from the client, in the same browser, with cookies enabled for this site.",
     );
   }
-  if (!(await useOnce("consent", onceKey(token, p.jti)))) {
+  if (!(await redeemOnce("consent", onceKey(token, p.jti)))) {
     throw new OAuthError("invalid_request", "this consent screen was already answered; start the connection again from the client");
   }
   if (form.get("decision") !== "approve") {

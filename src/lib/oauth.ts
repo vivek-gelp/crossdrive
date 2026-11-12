@@ -13,7 +13,7 @@ import {
   verifyRefreshToken,
   type ClientClaims,
 } from "./jwt";
-import { onceKey, useOnce } from "./once";
+import { onceKey, redeemOnce } from "./once";
 
 /**
  * Stateless OAuth 2.1 authorization server pieces (RFC 8414 / 9728 / 7591 /
@@ -230,7 +230,7 @@ export async function handleTokenRequest(form: URLSearchParams): Promise<TokenRe
     if (redirect_uri && claims.redirect_uri !== redirect_uri) throw new OAuthError("invalid_grant", "redirect_uri mismatch");
     if (!verifyPkce(verifier, claims.code_challenge)) throw new OAuthError("invalid_grant", "PKCE verification failed");
     // Single use (RFC 6749 4.1.2), checked after PKCE so a party without the verifier cannot burn the code.
-    if (!(await useOnce("code", onceKey(code, claims.jti)))) throw new OAuthError("invalid_grant", "authorization code was already used");
+    if (!(await redeemOnce("code", onceKey(code, claims.jti)))) throw new OAuthError("invalid_grant", "authorization code was already used");
     return mint(claims.email, claims.client_id, claims.scope ?? SCOPE_FULL);
   }
   if (grant === "refresh_token") {

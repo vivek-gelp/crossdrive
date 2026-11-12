@@ -22,7 +22,7 @@ import {
   validateAuthorizeRequest,
   validateRedirectUri,
 } from "./oauth";
-import { useOnce } from "./once";
+import { redeemOnce } from "./once";
 import { setStore } from "./store";
 import { memoryStore } from "./testing/fakeDrive";
 
@@ -244,8 +244,8 @@ describe("authorization codes are single-use", () => {
     const c = await code();
     expect((await redeem(c)).access_token).toBeTruthy();
     await expect(redeem(c)).rejects.toMatchObject({ code: "invalid_grant" });
-    expect(await useOnce("code", "abcdefgh")).toBe(true);
-    expect(await useOnce("code", "abcdefgh")).toBe(false);
+    expect(await redeemOnce("code", "abcdefgh")).toBe(true);
+    expect(await redeemOnce("code", "abcdefgh")).toBe(false);
   });
 
   it("refresh tokens stay reusable, so concurrent refreshes from one client keep working", async () => {

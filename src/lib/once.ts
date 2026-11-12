@@ -20,7 +20,7 @@ export function onceKey(token: string, jti: unknown): string {
 }
 
 /** True when this call is the first use of `key`; false when it was used before. Store errors propagate (fail closed). */
-export async function useOnce(kind: OnceKind, key: string): Promise<boolean> {
+export async function redeemOnce(kind: OnceKind, key: string): Promise<boolean> {
   const store = getStore();
   const path = `oauth-used/${kind}/${key}`;
   const marker = JSON.stringify({ usedAt: new Date().toISOString() });
