@@ -16,6 +16,8 @@ export interface FakeAccountSpec {
   drives?: SharedDrive[];
   /** Granted scope short names; default ["drive"] (no Gmail). */
   scopes?: string[];
+  /** Account mode as stored (default write). */
+  mode?: "read" | "write";
 }
 
 export interface FakeFile extends DriveFile {
@@ -66,6 +68,7 @@ export function memoryStore(): TextStore {
     read: async (p) => data.get(p) ?? null,
     write: async (p, t) => void data.set(p, t),
     listPaths: async (prefix) => [...data.keys()].filter((k) => k.startsWith(prefix)).sort(),
+    remove: async (p) => void data.delete(p),
   };
 }
 
@@ -77,6 +80,7 @@ export function storeMock(specs: FakeAccountSpec[]) {
     refresh_token: "r",
     connectedAt: "2026-01-01T00:00:00Z",
     scopes: s.scopes ?? ["drive"],
+    ...(s.mode ? { mode: s.mode } : {}),
   }));
   return {
     accessTokenFor: async (a: Account) => `tok-${a.label}`,
@@ -106,6 +110,10 @@ export interface FakeDriveOpts {
    * account only from its (inheritDelay + 1)-th files.get / files.copy request for that file onwards.
    */
   inheritDelay?: number;
+  /** permissions.create with an expirationTime answers 400 (as Drive does when it refuses an expiry). */
+  rejectExpiration?: boolean;
+  /** permissions.delete answers this status (e.g. 500) instead of removing the permission. */
+  failRemovePermissionWith?: number;
   /** Serve non-Google URLs (e.g. a `sourceUrl` for put); undefined falls through to a 404. */
   external?: (url: URL, init?: RequestInit) => Response | Promise<Response> | undefined;
 }
@@ -329,6 +337,10 @@ export function fakeDrive(specs: FakeAccountSpec[], files: Record<string, FakeFi
       const src = files[decodeURIComponent(copyM[1]!)];
       if (!src || !visible(spec, src)) return json({ error: { message: "File not found" } }, 404);
       if (opts.failCopyIds?.includes(src.id)) return json({ error: { message: "This file cannot be copied" } }, opts.failCopyStatus ?? 500);
+      const role = roleOf(src, spec.email);
+      if (src.copyRequiresWriterPermission && role !== "owner" && role !== "writer") {
+        return json({ error: { message: "The copy, print and download options are disabled for readers of this file" } }, 403);
+      }
       const b = body as { name?: string; parents: string[] };
       const id = nextId("copy");
       const parent = files[b.parents[0]!];
@@ -367,13 +379,14 @@ export function fakeDrive(specs: FakeAccountSpec[], files: Record<string, FakeFi
       const permId = permM[2] ? decodeURIComponent(permM[2]) : undefined;
       if (!permId && method === "GET") return json({ permissions: list });
       if (!permId && method === "POST") {
-        const b = body as { type: string; role: string; emailAddress?: string };
+        const b = body as { type: string; role: string; emailAddress?: string; expirationTime?: string };
+        if (b.expirationTime && opts.rejectExpiration) return json({ error: { message: "Expiration dates cannot be set on this item." } }, 400);
         const transfer = url.searchParams.get("transferOwnership") === "true";
         if (transfer) {
           for (const x of list) if (x.role === "owner") x.role = "writer";
           f.owners = [{ emailAddress: b.emailAddress }];
         }
-        const created: Permission = { id: nextId("perm"), type: b.type, role: b.role, emailAddress: b.emailAddress };
+        const created: Permission = { id: nextId("perm"), type: b.type, role: b.role, emailAddress: b.emailAddress, ...(b.expirationTime ? { expirationTime: b.expirationTime } : {}) };
         list.push(created);
         return json(created);
       }
@@ -384,6 +397,7 @@ export function fakeDrive(specs: FakeAccountSpec[], files: Record<string, FakeFi
         return json(target);
       }
       if (method === "DELETE") {
+        if (opts.failRemovePermissionWith) return json({ error: { message: "Internal error" } }, opts.failRemovePermissionWith);
         permissions[fileId] = list.filter((x) => x.id !== permId);
         return new Response(null, { status: 204 });
       }

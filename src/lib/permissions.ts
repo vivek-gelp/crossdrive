@@ -17,10 +17,12 @@ export interface PermissionRow {
   type: string;
   displayName?: string;
   pendingOwner?: boolean;
+  /** Set when the permission expires on its own (RFC 3339). */
+  expirationTime?: string;
 }
 
 function row(p: Permission): PermissionRow {
-  return { id: p.id, email: p.emailAddress, role: p.role, type: p.type, displayName: p.displayName, pendingOwner: p.pendingOwner || undefined };
+  return { id: p.id, email: p.emailAddress, role: p.role, type: p.type, displayName: p.displayName, pendingOwner: p.pendingOwner || undefined, ...(p.expirationTime ? { expirationTime: p.expirationTime } : {}) };
 }
 
 /** Sharing needs the owner or an editor with sharing rights; Drive reports this as `capabilities.canShare`. */

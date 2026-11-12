@@ -6,36 +6,44 @@
  * with the pending [source, destination] folder pairs, items waiting for a
  * retry and the temporary share) that the client passes back to continue.
  *
- * Cross-account: the source account shares the top folder with the
- * destination account once (writer, no e-mail); Drive inherits that
- * permission to everything below, the destination account copies
- * server-side, and the share is removed when the copy is done. No bytes pass
- * through this server. Same account: the same walker without the share.
+ * Cross-account, writable source: no folder is ever shared. For each file
+ * the source account grants the destination account temporary `reader`
+ * access to that one file (expiring, no e-mail, audited; tempgrant.ts), the
+ * destination copies it server-side, and the grant is removed in a `finally`
+ * before the next file. So at most one file is exposed at a time and nothing
+ * lingers when a client abandons the resume cursor. A file the source may not
+ * share for copying (copyRequiresWriterPermission, no sharing rights) is
+ * streamed through this server instead. Same account: the same walker
+ * without grants.
  *
- * Drive propagates an inherited share asynchronously, so the destination can
- * answer 404 for children for a few seconds. After sharing we wait until the
- * first child is visible (backoff up to ~15 s); a 404 / 5xx on one file is
- * retried with backoff, then the file is shared individually as a fallback;
- * what still fails goes back into the cursor (done stays false) for up to
- * MAX_RETRY_ROUNDS resumes before it is reported as a permanent failure.
+ * Cross-account, read-only source: the whole tree is streamed (streamcopy.ts,
+ * the transfer engine); nothing is written to the source account. That route
+ * returns its own resume cursor, which this function recognises.
+ *
+ * A 404 / 429 / 5xx on one file is retried with backoff; what still fails
+ * goes back into the cursor (done stays false) for up to MAX_RETRY_ROUNDS
+ * resumes before it is reported as a permanent failure.
  *
  * Idempotent: a destination child with the same name (and, for binary
  * files, the same size) is skipped, so a slice that was cut short or a
  * repeated call never duplicates anything.
  */
+import { isAccountReadOnly } from "./access";
 import { appendAudit, type AuditEntry } from "./audit";
+import { readOnlySourceReason, shareBlocker, unstreamable } from "./copyroute";
 import { assertWritable, ctxFor, ownerLabel, targetFolder, toResult, type Ctx, type FileResult } from "./ctx";
 import { DriveError, FOLDER_MIME, SHORTCUT_MIME, type DriveFile } from "./drive";
 import { isGoogleNativeMime } from "./naming";
 import type { OpMeta } from "./ops";
 import { pathResolver } from "./paths";
+import { CONVERTED_NOTE, isStreamCursor, streamById } from "./providers/transfer";
+import { streamCopy, type StreamCopyPlan, type StreamCopyResult } from "./streamcopy";
+import { grantTemporaryRead, removeTemporaryGrant, TEMP_GRANT_ROLE, TEMP_GRANT_TTL_MS, type TempGrant } from "./tempgrant";
 
 export const DEFAULT_MAX_FILES = 150;
 export const DRY_RUN_WALK_CAP = 5000;
 /** Stop a slice after this long so the function returns a cursor before Vercel's limit (maxDuration 300 s). */
 export const SLICE_BUDGET_MS = 240_000;
-/** Backoff (ms) while waiting for a fresh share to reach the children: ~15 s in total. */
-export const VISIBILITY_BACKOFF_MS = [500, 1000, 2000, 4000, 8000];
 /** Backoff (ms) between attempts at one file that answered 404 / 5xx. */
 export const COPY_RETRY_BACKOFF_MS = [500, 1000, 2000];
 /** Resumes an item may ride along as "retryable" before it becomes a permanent failure. */
@@ -77,11 +85,12 @@ export interface Cursor {
   pending: [string, string, string?, number?][];
   /** Files whose copy failed transiently (404 / 5xx) and will be tried again on the next call. */
   retry?: RetryItem[];
-  /** Temporary writer permission on the source top folder (cross-account only). */
+  /** Before 1.0.1 only: a writer share on the source top folder. Removed on the next resume. */
   share?: { permissionId: string };
-  /** True once the destination account could see a child of the shared folder. */
   visible?: boolean;
   totals: Counts;
+  /** Items left out on purpose over every slice (no export/import path when a file had to stream). */
+  notCopiedTotal?: number;
 }
 
 export interface CopyFailure {
@@ -102,6 +111,17 @@ export interface CopyTreeResult extends Counts {
   retrying: CopyFailure[];
   /** Cumulative over every slice of this copy. */
   totals: Counts;
+  /** Files of this slice that had to stream (copyRequiresWriterPermission, no sharing rights). */
+  streamedFiles: number;
+  /** Google Docs/Sheets/Slides of this slice that streamed: exported and imported back. */
+  converted: { path: string; note: string }[];
+  /** Items of this slice left out on purpose, with the reason. */
+  notCopied: { path: string; reason: string }[];
+  notCopiedTotal: number;
+  /** Temporary reader grants created and removed in this slice (cross-account). */
+  temporaryGrants: { created: number; removed: number };
+  /** Loud: temporary grants that could not be removed, each with the permission id and how to remove it. */
+  warnings: string[];
   done: boolean;
   /** Pass back as `resume` to continue; absent when done. */
   resume?: string;
@@ -122,6 +142,12 @@ export interface CopyTreePlan {
   truncated: boolean;
   /** Calls needed at maxFiles items per call (at least one). */
   calls: number;
+  /** Cross-account: files copied server-side through a temporary per-file reader grant. */
+  grantedFiles: number;
+  /** Cross-account: files that will stream instead (they may not be shared for copying). */
+  streamedFiles: number;
+  /** Per-item predictions: streamed, converted or skipped, with the reason. */
+  predictions: { name: string; issue: string }[];
   note: string;
 }
 
@@ -206,6 +232,13 @@ export async function planCopyTree(a: CopyTreeArgs, src: Ctx, dst: Ctx, file: Dr
   let bytes = 0;
   let seen = 0;
   let truncated = false;
+  let grantedFiles = 0;
+  let streamedFiles = 0;
+  const predictions: CopyTreePlan["predictions"] = [];
+  const crossAccount = src !== dst;
+  const predict = (name: string, issue: string) => {
+    if (predictions.length < 200) predictions.push({ name, issue });
+  };
   const queue = [file.id];
   while (queue.length && !truncated) {
     const id = queue.shift()!;
@@ -224,6 +257,18 @@ export async function planCopyTree(a: CopyTreeArgs, src: Ctx, dst: Ctx, file: Dr
         else {
           files++;
           bytes += f.size ? Number(f.size) : 0;
+          if (crossAccount) {
+            const blocker = shareBlocker(f);
+            if (!blocker) grantedFiles++;
+            else {
+              const no = unstreamable(f);
+              if (no) predict(f.name, `will be skipped: ${no}`);
+              else {
+                streamedFiles++;
+                predict(f.name, `will stream through this server (${blocker})${isGoogleNativeMime(f.mimeType) ? `; will be ${CONVERTED_NOTE}` : ""}`);
+              }
+            }
+          }
         }
       }
       pageToken = truncated ? undefined : page.nextPageToken;
@@ -243,56 +288,114 @@ export async function planCopyTree(a: CopyTreeArgs, src: Ctx, dst: Ctx, file: Dr
     bytes,
     truncated,
     calls: Math.max(1, Math.ceil((files + folders + shortcuts) / maxFiles)),
+    grantedFiles,
+    streamedFiles,
+    predictions,
     note:
       `Nothing was copied. Run again with dryRun=false; each call copies up to ${maxFiles} items and returns a resume cursor until done=true.` +
+      (crossAccount
+        ? ` Cross-account: no folder is shared; for each of ${grantedFiles} file(s) ${src.account.label} grants ${dst.account.label} temporary ${TEMP_GRANT_ROLE} access to that one file ` +
+          `(expiring after ${TEMP_GRANT_TTL_MS / 3_600_000} h, removed right after the file is copied, audited)` +
+          (streamedFiles ? `; ${streamedFiles} file(s) stream through this server instead (see predictions)` : "") +
+          "."
+        : "") +
       (truncated ? ` The walk stopped at ${DRY_RUN_WALK_CAP} items, so the totals are a lower bound.` : ""),
   };
 }
 
 // ---- cross-account helpers -------------------------------------------------
 
-/** Wait (backoff, ~15 s) until the destination account can read the first child of the shared folder. */
-async function waitForVisibility(src: Ctx, dst: Ctx, folderId: string, sleep: (ms: number) => Promise<void>): Promise<boolean> {
-  const first = (await src.drive.listChildren(folderId)).files[0];
-  if (!first) return true;
-  for (let i = 0; ; i++) {
+/** What one slice learns while copying files across accounts. */
+interface SliceLog {
+  meta: OpMeta;
+  grants: { created: number; removed: number };
+  warnings: string[];
+  converted: CopyTreeResult["converted"];
+  notCopied: CopyTreeResult["notCopied"];
+  streamed: number;
+  /** Time left in the slice, for a file that has to stream. */
+  remainingMs: () => number;
+}
+
+/** files.copy as the destination, retrying 404 / 429 / 5xx with backoff (cross-account only). */
+async function copyWithRetry(dst: Ctx, child: DriveFile, destId: string, retry: boolean, sleep: (ms: number) => Promise<void>): Promise<DriveFile> {
+  const meta = { name: child.name, parents: [destId] };
+  for (let attempt = 0; ; attempt++) {
     try {
-      await dst.drive.getFile(first.id);
-      return true;
+      return await dst.drive.copy(child.id, meta);
     } catch (e) {
-      if (!isTransient(e) || i >= VISIBILITY_BACKOFF_MS.length) return false;
-      await sleep(VISIBILITY_BACKOFF_MS[i]!);
+      if (!retry || !isTransient(e) || attempt >= COPY_RETRY_BACKOFF_MS.length) throw e;
+      await sleep(COPY_RETRY_BACKOFF_MS[attempt]!);
     }
   }
 }
 
 /**
- * Copy one file into the destination. Cross-account: retry transient errors
- * with backoff, then share this one file directly (writer, no e-mail), copy
- * and remove that share again. Throws the last error when nothing worked.
+ * Copy one file into the destination folder. Same account: files.copy. Cross-account: a temporary reader grant on
+ * this one file, files.copy as the destination, the grant removed in `finally`; or, for a file that may not be
+ * shared for copying, a stream through this server. Returns undefined when the file was left out on purpose.
  */
-async function copyOne(src: Ctx, dst: Ctx, child: DriveFile, destId: string, crossAccount: boolean, sleep: (ms: number) => Promise<void>): Promise<DriveFile> {
-  const meta = { name: child.name, parents: [destId] };
-  for (let attempt = 0; attempt <= (crossAccount ? COPY_RETRY_BACKOFF_MS.length : 0); attempt++) {
-    try {
-      return await dst.drive.copy(child.id, meta);
-    } catch (e) {
-      if (!crossAccount || !isTransient(e)) throw e;
-      if (attempt < COPY_RETRY_BACKOFF_MS.length) await sleep(COPY_RETRY_BACKOFF_MS[attempt]!);
+async function copyOne(src: Ctx, dst: Ctx, child: DriveFile, destId: string, crossAccount: boolean, sleep: (ms: number) => Promise<void>, log: SliceLog): Promise<DriveFile | undefined> {
+  if (!crossAccount) return copyWithRetry(dst, child, destId, false, sleep);
+  const blocker = shareBlocker(child);
+  if (blocker) {
+    const no = unstreamable(child);
+    if (no) {
+      log.notCopied.push({ path: child.name, reason: no });
+      return undefined;
     }
+    const r = await streamById(
+      { fromAccount: src.account.label, fileId: child.id, toAccount: dst.account.label, toFolderId: destId, reason: blocker, budgetMs: Math.max(1000, log.remainingMs()) },
+      { actor: log.meta.actor },
+    );
+    if ("dryRun" in r) throw new Error("unexpected dry run");
+    if (r.notCopied[0]) {
+      log.notCopied.push({ path: child.name, reason: r.notCopied[0].reason });
+      return undefined;
+    }
+    if (r.failed[0]) throw new Error(r.failed[0].error);
+    if (!r.done) throw new Error(`did not finish streaming inside this slice; copy it on its own with the copy tool (it resumes), then run this copy again`);
+    log.streamed++;
+    if (r.converted.length) log.converted.push({ path: child.name, note: CONVERTED_NOTE });
+    const id = r.created[0]?.id;
+    return id ? dst.drive.getFile(id) : dst.drive.findChildByName(destId, child.name, false);
   }
-  // Fallback: an explicit permission on the file itself is visible immediately.
-  const perm = await src.drive.createPermission(child.id, { type: "user", role: "writer", emailAddress: dst.ownEmail }, { sendNotificationEmail: false });
+  const g = await grantTemporaryRead(src, dst, child, { ...log.meta, tool: "copy" });
+  if (g.kind === "existing") return copyWithRetry(dst, child, destId, true, sleep);
+  log.grants.created++;
   try {
-    return await dst.drive.copy(child.id, meta);
+    return await copyWithRetry(dst, child, destId, true, sleep);
   } finally {
-    await src.drive.removePermission(child.id, perm.id).catch(() => undefined);
+    const r = await removeTemporaryGrant(src, g.grant, log.meta);
+    if (r.removed) log.grants.removed++;
+    else if (r.warning) log.warnings.push(r.warning);
   }
+}
+
+/** Remove the writer share a pre-1.0.1 cursor left on the source top folder. */
+async function removeLegacyShare(src: Ctx, dst: Ctx, file: DriveFile, cursor: Cursor, meta: OpMeta, log: SliceLog): Promise<void> {
+  if (!cursor.share) return;
+  const g: TempGrant = {
+    account: src.account.label,
+    toAccount: dst.account.label,
+    email: dst.ownEmail,
+    fileId: file.id,
+    name: file.name,
+    role: TEMP_GRANT_ROLE,
+    permissionId: cursor.share.permissionId,
+    createdAt: new Date().toISOString(),
+    tool: "copy",
+  };
+  const r = await removeTemporaryGrant(src, g, meta);
+  if (r.removed) log.grants.removed++;
+  else if (r.warning) log.warnings.push(r.warning.replace(`${TEMP_GRANT_ROLE} access`, "writer access (a folder share left by an earlier version)"));
+  delete cursor.share;
+  delete cursor.visible;
 }
 
 // ---- copy ------------------------------------------------------------------
 
-export async function copyTree(a: CopyTreeArgs, meta: OpMeta, opts: CopyTreeOpts = {}): Promise<CopyTreeResult | CopyTreePlan> {
+export async function copyTree(a: CopyTreeArgs, meta: OpMeta, opts: CopyTreeOpts = {}): Promise<CopyTreeResult | CopyTreePlan | StreamCopyResult | StreamCopyPlan> {
   const now = opts.now ?? Date.now;
   const sleep = opts.sleep ?? defaultSleep;
   const deadline = now() + (opts.budgetMs ?? SLICE_BUDGET_MS);
@@ -304,6 +407,23 @@ export async function copyTree(a: CopyTreeArgs, meta: OpMeta, opts: CopyTreeOpts
   if (file.mimeType !== FOLDER_MIME) throw new Error(`${file.name} is not a folder`);
   if (a.trashOriginal) assertWritable(file, "edit");
   const name = a.newName ?? file.name;
+
+  // A read-only source is never written to, not even a permission: the whole tree streams through this server.
+  const streamResume = a.resume !== undefined && isStreamCursor(a.resume);
+  if (crossAccount && (streamResume || (await isAccountReadOnly(src.account.label)))) {
+    if (a.trashOriginal) throw new Error(`trashOriginal is refused: ${readOnlySourceReason(src.account.label)}`);
+    if (a.resume && !streamResume) {
+      throw new Error(`source account ${src.account.label} became read-only during this copy; start the copy again without resume (items already copied are skipped)`);
+    }
+    if (!a.toPath && !a.toFolderId && !a.resume) throw new Error("Give toPath or toFolderId for the destination folder");
+    const toFolderId = await targetFolder(dst, a);
+    if (!a.resume) assertWritable(await dst.drive.getFile(toFolderId), "addChildren");
+    return streamCopy(
+      { fromAccount: a.fromAccount, fileId: a.fileId, toAccount: a.toAccount, toFolderId, newName: a.newName, resume: a.resume, dryRun: a.dryRun, maxFiles: a.maxFiles, budgetMs: opts.budgetMs },
+      readOnlySourceReason(src.account.label),
+      meta,
+    );
+  }
 
   let cursor: Cursor | undefined;
   if (a.resume) {
@@ -337,16 +457,8 @@ export async function copyTree(a: CopyTreeArgs, meta: OpMeta, opts: CopyTreeOpts
     cursor = { v: 1, from: a.fromAccount, fileId: a.fileId, to: a.toAccount, topDest: top.id, pending: [[file.id, top.id]], totals: zero() };
   }
 
-  // One temporary writer share on the top source folder; Drive inherits it to the whole tree (asynchronously).
-  if (crossAccount && !cursor.share) {
-    const existingPerm = (await src.drive.listPermissions(file.id)).find((p) => p.emailAddress?.toLowerCase() === dst.ownEmail);
-    if (!existingPerm) {
-      const perm = await src.drive.createPermission(file.id, { type: "user", role: "writer", emailAddress: dst.ownEmail }, { sendNotificationEmail: false });
-      cursor.share = { permissionId: perm.id };
-      await appendAudit({ tool: "share", account: a.fromAccount, fileId: file.id, name: file.name, email: dst.ownEmail, role: "writer", owner: ownerLabel(src, file), actor: meta.actor, batchId: meta.batchId, note: "temporary, for a folder copy" });
-    }
-  }
-  if (crossAccount && !cursor.visible) cursor.visible = await waitForVisibility(src, dst, file.id, sleep);
+  const log: SliceLog = { meta, grants: { created: 0, removed: 0 }, warnings: [], converted: [], notCopied: [], streamed: 0, remainingMs: () => deadline - now() };
+  if (crossAccount) await removeLegacyShare(src, dst, file, cursor, meta, log);
 
   const slice: Counts = topCreated ? { ...zero(), createdFolders: 1 } : zero();
   const failures: CopyFailure[] = [];
@@ -366,7 +478,9 @@ export async function copyTree(a: CopyTreeArgs, meta: OpMeta, opts: CopyTreeOpts
 
   const copyChild = async (child: DriveFile, destId: string, existing: Map<string, DriveFile>, rounds: number) => {
     try {
-      existing.set(child.name, await copyOne(src, dst, child, destId, crossAccount, sleep));
+      const copied = await copyOne(src, dst, child, destId, crossAccount, sleep, log);
+      if (!copied) return;
+      existing.set(child.name, copied);
       slice.copiedFiles++;
     } catch (e) {
       const failure = { id: child.id, name: child.name, error: errorMessage(e) };
@@ -451,6 +565,7 @@ export async function copyTree(a: CopyTreeArgs, meta: OpMeta, opts: CopyTreeOpts
   const retry = [...retryQueue, ...retryNext];
   cursor.retry = retry.length ? retry : undefined;
   for (const k of Object.keys(slice) as (keyof Counts)[]) cursor.totals[k] += slice[k];
+  cursor.notCopiedTotal = (cursor.notCopiedTotal ?? 0) + log.notCopied.length;
   const done = cursor.pending.length === 0 && retry.length === 0;
 
   const auditEntry: Omit<AuditEntry, "ts"> = {
@@ -469,14 +584,10 @@ export async function copyTree(a: CopyTreeArgs, meta: OpMeta, opts: CopyTreeOpts
   };
   await appendAudit(auditEntry);
 
-  if (done && cursor.share) {
-    await src.drive.removePermission(file.id, cursor.share.permissionId).catch(() => undefined);
-    await appendAudit({ tool: "unshare", account: a.fromAccount, fileId: file.id, name: file.name, email: dst.ownEmail, owner: ownerLabel(src, file), actor: meta.actor, batchId: meta.batchId, note: "temporary share for a folder copy removed" });
-    delete cursor.share;
-  }
-
   let trashed = false;
-  if (done && a.trashOriginal) {
+  if (done && a.trashOriginal && (cursor.notCopiedTotal ?? 0) > 0) {
+    log.warnings.push(`The source was not trashed: ${cursor.notCopiedTotal} item(s) were not copied.`);
+  } else if (done && a.trashOriginal) {
     await src.drive.setTrashed(file.id, true);
     trashed = true;
     await appendAudit({ tool: "trash", account: a.fromAccount, fileId: file.id, name: file.name, owner: ownerLabel(src, file), actor: meta.actor, batchId: meta.batchId });
@@ -486,9 +597,15 @@ export async function copyTree(a: CopyTreeArgs, meta: OpMeta, opts: CopyTreeOpts
     done
       ? `Done: ${cursor.totals.copiedFiles} files, ${cursor.totals.shortcuts} shortcuts and ${cursor.totals.createdFolders} folders in total; ${cursor.totals.skipped} already existed.`
       : `Not finished: call copy again with the same arguments plus this resume cursor.`,
-    retrying.length ? `${retrying.length} item(s) answered a transient error (the share may not have propagated yet) and will be retried on the next call.` : "",
-    crossAccount ? (done ? `The temporary writer share for ${dst.ownEmail} on the source folder was removed.` : `The source folder stays shared with ${dst.ownEmail} (writer) until the copy is done.`) : "",
+    retrying.length ? `${retrying.length} item(s) answered a transient error and will be retried on the next call.` : "",
+    crossAccount
+      ? `Cross-account: ${log.grants.created} temporary ${TEMP_GRANT_ROLE} grant(s) for ${dst.ownEmail}, one file at a time, ${log.grants.removed} removed; no folder was shared.`
+      : "",
+    log.streamed ? `${log.streamed} file(s) could not be shared for copying and were streamed through this server.` : "",
+    log.converted.length ? `${log.converted.length} Google Docs/Sheets/Slides ${CONVERTED_NOTE}.` : "",
+    log.notCopied.length ? `${log.notCopied.length} item(s) were not copied (see notCopied).` : "",
     failures.length ? `${failures.length} item(s) failed permanently and were left out; see failures.` : "",
+    ...log.warnings,
   ].filter(Boolean);
 
   return {
@@ -501,6 +618,12 @@ export async function copyTree(a: CopyTreeArgs, meta: OpMeta, opts: CopyTreeOpts
     failures,
     retrying,
     totals: cursor.totals,
+    streamedFiles: log.streamed,
+    converted: log.converted,
+    notCopied: log.notCopied,
+    notCopiedTotal: cursor.notCopiedTotal ?? 0,
+    temporaryGrants: log.grants,
+    warnings: log.warnings,
     done,
     resume: done ? undefined : encodeCursor(cursor),
     note: noteParts.join(" "),

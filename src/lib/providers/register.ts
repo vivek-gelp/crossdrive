@@ -273,7 +273,9 @@ export function registerProviderWriteTools(server: McpServer, deps: Pick<Provide
         `(Google Docs/Sheets/Slides exported to docx/xlsx/pptx, names illegal on the target and how they are renamed, size and path limits), walk capped at ${DRY_RUN_CAP} items. ` +
         `With dryRun=false the work happens in slices (up to maxFiles items, default ${DEFAULT_TRANSFER_MAX_FILES}, or ~4 minutes): repeat the call with the same from/to/move plus the returned cursor until done=true. ` +
         "Every file is verified (size, and content hash where comparable). Existing destination items are never overwritten: identical ones are skipped, different ones reported. " +
-        "move=true trashes the source (recoverably) only on the final slice and only if every item verified. Google to Google uses Drive's server-side copy.",
+        "move=true trashes the source (recoverably) only on the final slice and only if every item verified. " +
+        "Google to Google: a writable source uses Drive's server-side copy through a temporary per-file reader grant (removed after each file, audited); " +
+        "a read-only source (or a file only writers may copy) is streamed and never modified, with Docs/Sheets/Slides exported and imported back and Forms and similar listed in notCopied.",
       inputSchema: z.object({
         from: refArg.describe("Source file or folder, label:/path"),
         to: refArg.describe("Destination folder, label:/path (must exist; the item keeps its name inside it)"),

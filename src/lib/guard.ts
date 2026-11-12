@@ -21,7 +21,7 @@ const PAGING_HINTS: Record<string, string> = {
   mail_search: "Use a smaller limit and follow nextPageToken.",
   changes: "Use a smaller limit or a later since, or fewer accounts.",
   audit: "Use a smaller limit or a date.",
-  duplicates: "Narrow with path or folderId, or raise minSize.",
+  duplicates: "Narrow with path or folderId (acrossAccounts: path/paths as label:/folder, or account+folderId), raise minSize, or with acrossAccounts use a smaller limit and follow page.cursor.",
   tree: "Use a smaller depth or a deeper starting path.",
   inbox: "Ask for one account at a time.",
   batch: "Send fewer operations per call.",

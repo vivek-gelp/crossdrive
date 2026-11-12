@@ -32,6 +32,11 @@ export async function assertAccountWritable(account: { label: string }): Promise
   checkAccountWritable(await getAccount(account.label, { fresh: true }));
 }
 
+/** Fresh read of the account's mode (never the per-instance cache): true when it is connected read-only. */
+export async function isAccountReadOnly(label: string): Promise<boolean> {
+  return accountMode(await getAccount(label, { fresh: true })) === "read";
+}
+
 /**
  * What a mail tool needs: `read` (search/read/labels/attachments), `modify`
  * (labels, archive, trash), `draft` (create a draft), `send` (send or reply).

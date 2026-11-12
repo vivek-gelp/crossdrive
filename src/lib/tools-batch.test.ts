@@ -130,7 +130,8 @@ describe("batch", () => {
     expect(b.files.b!.trashed).toBe(true);
     expect(r.json!.summary).toEqual({ total: 7, ok: 5, error: 2, ready: 0, skipped: 0, mutations: { move: 1, rename: 1, trash: 1, copy: 1, mkdir: 1, total: 5 } });
     const audit = await readAudit(20);
-    expect(audit.map((e) => e.tool)).toEqual(["trash", "copy", "mkdir", "move", "rename"]);
+    // The cross-account copy adds its temporary grant and its removal.
+    expect(audit.map((e) => e.tool)).toEqual(["trash", "copy", "temp_grant_removed", "temp_grant", "mkdir", "move", "rename"]);
     expect(new Set(audit.map((e) => e.batchId))).toEqual(new Set([r.json!.batchId]));
     expect(defs.batch?.annotations?.destructiveHint).toBe(true);
   });

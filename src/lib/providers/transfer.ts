@@ -23,16 +23,28 @@
  * Move = copy + verify, then the SOURCE top item is trashed (recoverable:
  * Drive trash, OneDrive recycle bin, Dropbox deleted files), only on the
  * final slice and only when no item of the whole transfer failed or was left
- * behind. Google → Google is delegated to the existing server-side copy
- * (copytree.ts / ops.ts), so no bytes pass through this server.
+ * behind.
+ *
+ * Google → Google: when the source account is writable, the copy is
+ * delegated to Drive's server-side copy (copytree.ts / ops.ts: a temporary
+ * per-file reader grant, see tempgrant.ts). When the source account is
+ * read-only, or a single file cannot be shared for copying
+ * (`copyRequiresWriterPermission`, no sharing rights), it is streamed through
+ * this server like any other route, so nothing is ever written to the source
+ * account. Google Docs/Sheets/Slides are then exported to docx/xlsx/pptx and
+ * imported back into the native type (CONVERTED_NOTE); native types without an
+ * import path (Forms, Sites, Drawings, ...) and shortcuts are skipped with the
+ * reason. `streamById` is the same engine addressed by ids, for the copy tool.
  */
 import { appendAudit } from "../audit";
 import { copyTree, type CopyTreePlan, type CopyTreeResult } from "../copytree";
+import { TEMP_GRANT_TTL_MS } from "../tempgrant";
 import { copyFile } from "../ops";
+import { googleStreamReason } from "../copyroute";
 import type { Account } from "../store";
 import { hashesMatch, MultiHasher } from "./hash";
 import { assertWriteMode, parseRef, providerFor, PROVIDER_NAMES } from "./index";
-import { exportFor, exportedName } from "./google";
+import { exportFor, exportedName, importFor } from "./google";
 import { limitProblem, targetName } from "./names";
 import { joinPath, ProviderError, type Entry, type Hashes, type HashKind, type StorageProvider, type UploadHandle } from "./types";
 
@@ -71,7 +83,14 @@ export interface Totals {
   bytes: number;
   verifiedHash: number;
   verifiedSize: number;
+  /** Google -> Google streaming: native files exported and imported back (see CONVERTED_NOTE). */
+  converted: number;
+  /** Items left out on purpose (no export/import path, shortcuts); listed with the reason. */
+  unsupported: number;
 }
+
+/** Shown for every Google-native file that was exported and imported back instead of copied by Drive. */
+export const CONVERTED_NOTE = "converted (export/import): comments, revision history and some formatting are not preserved";
 
 interface EntryLite {
   id: string;
@@ -97,6 +116,10 @@ interface CrossCursor {
   to: string;
   move: boolean;
   srcTop: Entry;
+  /** Name for the top item at the destination when it differs from the source name (copy newName). */
+  topName?: string;
+  /** Why a Google -> Google copy streams instead of using Drive's server-side copy. */
+  streamReason?: string;
   queue: QueueItem[];
   partial?: PartialFile;
   totals: Totals;
@@ -133,6 +156,14 @@ export interface TransferResult {
   totals: Totals;
   /** Conversions, renames and warnings seen in this slice. */
   notes: string[];
+  /** Google -> Google streaming: native files exported and imported back in this slice. */
+  converted: { path: string; note: string }[];
+  /** Items of this slice left out on purpose, with the reason (not failures). */
+  notCopied: { path: string; reason: string }[];
+  /** Files created at the destination in this slice. */
+  created: { path: string; id: string }[];
+  /** Set when a Google -> Google copy streams through this server, with the reason. */
+  streamReason?: string;
   move?: { trashed: boolean; reason?: string };
   report: string;
 }
@@ -147,6 +178,11 @@ export interface TransferPlan {
   bytes: number;
   /** Google-native files that will be exported (their size is not known before export). */
   exports: number;
+  /** Google -> Google streaming only: files streamed byte for byte, natives converted by export/import, items skipped. */
+  streamed?: number;
+  converted?: number;
+  unsupported?: number;
+  streamReason?: string;
   /** Things that will not transfer cleanly: conversions, renames, size/path limits, unsupported items, existing items. */
   issues: { path: string; issue: string }[];
   truncated: boolean;
@@ -154,7 +190,7 @@ export interface TransferPlan {
   note: string;
 }
 
-const zero = (): Totals => ({ copied: 0, folders: 0, skipped: 0, failed: 0, bytes: 0, verifiedHash: 0, verifiedSize: 0 });
+const zero = (): Totals => ({ copied: 0, folders: 0, skipped: 0, failed: 0, bytes: 0, verifiedHash: 0, verifiedSize: 0, converted: 0, unsupported: 0 });
 
 export function encodeTransferCursor(c: Cursor): string {
   return Buffer.from(JSON.stringify(c), "utf8").toString("base64url");
@@ -198,9 +234,10 @@ export async function* rechunk(source: AsyncIterable<Uint8Array>, size: number):
 // ---- the per-file step --------------------------------------------------------
 
 type FileOutcome =
-  | { kind: "copied"; bytes: number; verified: "hash" | "size"; note?: string }
-  | { kind: "skipped"; verified: "hash" | "size" }
+  | { kind: "copied"; bytes: number; verified: "hash" | "size" | "converted"; id?: string; note?: string }
+  | { kind: "skipped"; verified?: "hash" | "size" }
   | { kind: "failed"; error: string }
+  | { kind: "unsupported"; reason: string }
   | { kind: "partial"; partial: PartialFile; bytes: number };
 
 interface Slice {
@@ -210,6 +247,8 @@ interface Slice {
   now: () => number;
   notes: string[];
   actor: string;
+  /** Google -> Google: natives are imported back into their type; shortcuts and natives without an import are skipped. */
+  converting: boolean;
 }
 
 function note(s: Slice, line: string) {
@@ -217,10 +256,30 @@ function note(s: Slice, line: string) {
 }
 
 /** Name, export and limit checks shared by the dry run and the copy. */
-function plannedName(s: Pick<Slice, "dst">, src: Entry, destFolderPath: string): { name: string; problem?: string; notes: string[] } {
+interface Planned {
+  name: string;
+  problem?: string;
+  /** Left out on purpose (Google -> Google streaming): reported with this reason, not as a failure. */
+  unsupported?: string;
+  /** Upload with conversion into this Google-native type. */
+  convertTo?: string;
+  notes: string[];
+}
+
+function plannedName(s: Pick<Slice, "dst" | "converting">, src: Entry, destFolderPath: string, nameOverride?: string): Planned {
   const notes: string[] = [];
+  if (s.converting) {
+    if (src.shortcut) return { name: src.name, unsupported: "Google Drive shortcut: not copied when streaming (it points at an item of the source account)", notes };
+    if (src.googleNative) {
+      const imp = importFor(src);
+      if (!imp) return { name: src.name, unsupported: `Google-native type ${src.mimeType} has no export/import path; copy it from a writable source account, or by hand`, notes };
+      return { name: nameOverride ?? src.name, convertTo: src.mimeType, notes: [CONVERTED_NOTE] };
+    }
+    const name = nameOverride ?? src.name;
+    return { name, problem: limitProblem(s.dst.caps, name, joinPath(destFolderPath, name), src.isFolder ? undefined : src.size), notes };
+  }
   if (src.shortcut) return { name: src.name, problem: "Google Drive shortcut: not transferred", notes };
-  let base = src.name;
+  let base = nameOverride ?? src.name;
   if (src.googleNative) {
     const x = exportFor(src);
     if (!x) return { name: src.name, problem: `Google-native type ${src.mimeType} cannot be exported`, notes };
@@ -265,16 +324,16 @@ function verify(src: Entry, final: Entry, size: number, digest: Hashes | undefin
   return { ok: true, level };
 }
 
-async function streamFile(s: Slice, src: Entry, dest: EntryLite, name: string, resume?: PartialFile): Promise<FileOutcome> {
+async function streamFile(s: Slice, src: Entry, dest: EntryLite, name: string, resume?: PartialFile, convertTo?: string): Promise<FileOutcome> {
   const offset0 = resume?.offset ?? 0;
   const dl = await s.src.download(src, offset0);
   const total = resume ? resume.handle.size : (dl.size ?? src.size);
   if (total === undefined) return { kind: "failed", error: "source did not report a size" };
-  if (!resume) {
+  if (!resume && !convertTo) {
     const problem = limitProblem(s.dst.caps, name, joinPath(dest.path, name), total);
     if (problem) return { kind: "failed", error: problem };
   }
-  const handle = resume?.handle ?? (await s.dst.beginUpload(asEntry(dest), name, total, dl.contentType));
+  const handle = resume?.handle ?? (await s.dst.beginUpload(asEntry(dest), name, total, dl.contentType, convertTo ? { convertTo } : undefined));
   // Hash on the way through only when the whole file passes through this slice.
   const kinds: HashKind[] = [...new Set<HashKind>([...(Object.keys(src.hash ?? {}) as HashKind[]), s.dst.caps.hashes[0]!])];
   const hasher = resume ? undefined : new MultiHasher(kinds);
@@ -298,20 +357,28 @@ async function streamFile(s: Slice, src: Entry, dest: EntryLite, name: string, r
     if (offset !== total) throw new ProviderError(`source ended after ${offset} of ${total} bytes`, 500);
   }
   const final = await s.dst.finishUpload(handle, done);
+  // An imported file is a new native document: there are no bytes to compare with what was sent.
+  if (convertTo) return { kind: "copied", bytes: total, verified: "converted", id: final.id };
   const v = verify(src, final, total, hasher?.digest());
   if (!v.ok) {
     await s.dst.trash(final).catch(() => undefined);
     await appendAudit({ tool: "trash", account: s.dst.label, fileId: final.id, name: final.name, actor: s.actor, note: "transfer: copy failed verification" });
     return { kind: "failed", error: `verification failed (${v.error}); the destination copy was moved to trash` };
   }
-  return { kind: "copied", bytes: total - offset0, verified: v.level };
+  return { kind: "copied", bytes: total - offset0, verified: v.level, id: final.id };
 }
 
-async function transferOne(s: Slice, src: Entry, dest: EntryLite): Promise<FileOutcome> {
-  const planned = plannedName(s, src, dest.path);
+async function transferOne(s: Slice, src: Entry, dest: EntryLite, nameOverride?: string): Promise<FileOutcome> {
+  const planned = plannedName(s, src, dest.path, nameOverride);
+  if (planned.unsupported) return { kind: "unsupported", reason: planned.unsupported };
   for (const n of planned.notes) note(s, `${src.path}: ${n}`);
   if (planned.problem) return { kind: "failed", error: planned.problem };
   const existing = await s.dst.child(asEntry(dest), planned.name);
+  if (existing && planned.convertTo) {
+    // A native document of the same name and type counts as already copied (natives have no checksum to compare).
+    if (existing.mimeType === planned.convertTo) return { kind: "skipped" };
+    return { kind: "failed", error: `"${existing.name}" already exists at the destination as another type; not overwritten` };
+  }
   if (existing) {
     if (!src.googleNative) return compareExisting(src, existing, src.size);
     // Exports have no size up front: export again and compare sizes.
@@ -320,13 +387,49 @@ async function transferOne(s: Slice, src: Entry, dest: EntryLite): Promise<FileO
     for await (const c of dl.stream) size += c.length;
     return compareExisting({ ...src, hash: undefined }, existing, size);
   }
-  return streamFile(s, src, dest, planned.name);
+  return streamFile(s, src, dest, planned.name, undefined, planned.convertTo);
 }
 
 // ---- entry point -----------------------------------------------------------------
 
 function route(src: StorageProvider, dst: StorageProvider): string {
   return `${PROVIDER_NAMES[src.kind]} (${src.label}) -> ${PROVIDER_NAMES[dst.kind]} (${dst.label})`;
+}
+
+function streamRoute(s: Slice, reason?: string): string {
+  return reason ? `${route(s.src, s.dst)} (streamed through this server: ${reason})` : route(s.src, s.dst);
+}
+
+/** True when `s` is a resume cursor of the streaming engine (as returned by transfer, or by copy when it streams). */
+export function isStreamCursor(s: string): boolean {
+  try {
+    const c = JSON.parse(Buffer.from(s, "base64url").toString("utf8")) as { v?: number; kind?: string };
+    return c?.v === 1 && c.kind === "cross";
+  } catch {
+    return false;
+  }
+}
+
+function newSlice(src: StorageProvider, dst: StorageProvider, deadline: number, now: () => number, actor: string): Slice {
+  return { src, dst, deadline, now, notes: [], actor, converting: src.kind === "google" && dst.kind === "google" };
+}
+
+/** First slice: create (or reuse) the destination top folder and queue the work. */
+async function initCross(s: Slice, ids: { from: string; to: string; move: boolean }, srcTop: Entry, destParent: Entry, topName?: string, streamReason?: string): Promise<CrossCursor> {
+  const c: CrossCursor = { v: 1, kind: "cross", from: ids.from, to: ids.to, move: ids.move, srcTop, topName, streamReason, queue: [], totals: zero(), failures: [] };
+  if (srcTop.isFolder) {
+    const planned = plannedName(s, srcTop, destParent.path, topName);
+    for (const n of planned.notes) note(s, `${srcTop.path}: ${n}`);
+    if (planned.problem) throw new Error(`${srcTop.path}: ${planned.problem}`);
+    const existing = await s.dst.child(destParent, planned.name);
+    if (existing && !existing.isFolder) throw new Error(`A file named "${planned.name}" already exists in ${ids.to}; not overwritten`);
+    const top = existing ?? (await s.dst.mkdir(destParent, planned.name));
+    if (!existing) c.totals.folders++;
+    c.queue.push([lite(srcTop), lite(top), null, 0]);
+  } else {
+    c.queue.push([lite(destParent), lite(destParent), "__single__", 0]);
+  }
+  return c;
 }
 
 export async function transfer(a: TransferArgs, opts: TransferOpts): Promise<TransferResult | TransferPlan> {
@@ -351,11 +454,18 @@ export async function transfer(a: TransferArgs, opts: TransferOpts): Promise<Tra
   await assertWriteMode(dstAccount);
   if (move) await assertWriteMode(srcAccount);
 
+  const s = newSlice(src, dst, deadline, now, opts.actor);
+  let streamReason: string | undefined;
   if (src.kind === "google" && dst.kind === "google") {
-    return googleToGoogle(a, { srcAccount, dstAccount, src, dst, move, maxFiles, cursor: cursor as GoogleCursor | undefined }, opts);
+    if (cursor?.kind === "google") return googleToGoogle(a, { srcAccount, dstAccount, src, dst, move, maxFiles, cursor }, opts);
+    if (!cursor) {
+      const srcTop = await src.stat(fromRef.path);
+      streamReason = await googleStreamReason(srcAccount.label, srcTop.isFolder ? undefined : srcTop.id);
+      // A writable source: Drive copies server-side through a temporary per-file reader grant.
+      if (!streamReason) return googleToGoogle(a, { srcAccount, dstAccount, src, dst, move, maxFiles }, opts);
+    }
   }
 
-  const s: Slice = { src, dst, deadline, now, notes: [], actor: opts.actor };
   let c: CrossCursor;
   if (cursor) {
     if (cursor.kind !== "cross") throw new Error("This cursor belongs to a Google-to-Google transfer");
@@ -368,52 +478,116 @@ export async function transfer(a: TransferArgs, opts: TransferOpts): Promise<Tra
     if (fromRef.label === toRef.label && srcTop.isFolder && (destParent.path === srcTop.path || destParent.path.startsWith(`${srcTop.path}/`))) {
       throw new Error(`Cannot transfer ${a.from} into itself`);
     }
-    if (a.dryRun) return planTransfer(s, a, srcTop, destParent);
-    c = { v: 1, kind: "cross", from: a.from, to: a.to, move, srcTop, queue: [], totals: zero(), failures: [] };
-    if (srcTop.isFolder) {
-      const planned = plannedName(s, srcTop, destParent.path);
-      for (const n of planned.notes) note(s, `${srcTop.path}: ${n}`);
-      if (planned.problem) throw new Error(`${srcTop.path}: ${planned.problem}`);
-      const existing = await dst.child(destParent, planned.name);
-      if (existing && !existing.isFolder) throw new Error(`A file named "${planned.name}" already exists in ${a.to}; not overwritten`);
-      const top = existing ?? (await dst.mkdir(destParent, planned.name));
-      if (!existing) c.totals.folders++;
-      c.queue.push([lite(srcTop), lite(top), null, 0]);
-    } else {
-      c.queue.push([lite(destParent), lite(destParent), "__single__", 0]);
-    }
+    if (a.dryRun) return planTransfer(s, a, srcTop, destParent, { streamReason });
+    c = await initCross(s, { from: a.from, to: a.to, move }, srcTop, destParent, undefined, streamReason);
   }
   if (a.dryRun) throw new Error("dryRun cannot be combined with cursor");
+  return runCross(s, c, { maxFiles, deadline, now, actor: opts.actor, from: a.from, to: a.to, move });
+}
 
+export interface StreamByIdArgs {
+  fromAccount: string;
+  fileId: string;
+  toAccount: string;
+  toFolderId: string;
+  /** Name of the top item at the destination (default: the source name). */
+  newName?: string;
+  cursor?: string;
+  dryRun?: boolean;
+  maxFiles?: number;
+  budgetMs?: number;
+  /** Shown in the route and the results: why this copy streams. */
+  reason: string;
+}
+
+/**
+ * The streaming engine addressed by ids (the copy tool, when a Google -> Google copy must not, or cannot, use a
+ * temporary grant on the source). Never touches the source account except to read it. Same resume semantics as
+ * transfer: repeat with the returned cursor until done.
+ */
+export async function streamById(a: StreamByIdArgs, opts: TransferOpts): Promise<TransferResult | TransferPlan> {
+  const now = opts.now ?? Date.now;
+  const deadline = now() + Math.min(a.budgetMs ?? TRANSFER_BUDGET_MS, TRANSFER_BUDGET_MS);
+  const maxFiles = Math.max(1, a.maxFiles ?? DEFAULT_TRANSFER_MAX_FILES);
+  const { account: dstAccount, provider: dst } = await providerFor(a.toAccount);
+  const { provider: src } = await providerFor(a.fromAccount);
+  await assertWriteMode(dstAccount);
+  const from = `${a.fromAccount}:#${a.fileId}`;
+  const to = `${a.toAccount}:#${a.toFolderId}`;
+  const s = newSlice(src, dst, deadline, now, opts.actor);
+  let c: CrossCursor;
+  if (a.cursor) {
+    const cur = decodeTransferCursor(a.cursor);
+    if (cur.kind !== "cross" || cur.from !== from || cur.to !== to) {
+      throw new Error(`This resume cursor belongs to a different copy (${cur.from} -> ${cur.to}); pass the same fromAccount, fileId, toAccount and destination`);
+    }
+    c = cur;
+  } else {
+    const srcTop = await src.statId(a.fileId);
+    const destParent = await dst.statId(a.toFolderId);
+    if (!destParent.isFolder) throw new Error(`${a.toFolderId} is not a folder`);
+    if (a.dryRun) return planTransfer(s, { from, to, move: false }, srcTop, destParent, { streamReason: a.reason, topName: a.newName });
+    c = await initCross(s, { from, to, move: false }, srcTop, destParent, a.newName, a.reason);
+  }
+  return runCross(s, c, { maxFiles, deadline, now, actor: opts.actor, from, to, move: false, auditTool: "copy" });
+}
+
+interface RunOpts {
+  maxFiles: number;
+  deadline: number;
+  now: () => number;
+  actor: string;
+  from: string;
+  to: string;
+  move: boolean;
+  /** Audit tool name of the per-slice entry (default "transfer"; the copy tool passes "copy"). */
+  auditTool?: string;
+}
+
+/** One slice of the streaming engine over cursor `c`. */
+async function runCross(s: Slice, c: CrossCursor, o: RunOpts): Promise<TransferResult> {
+  const { src, dst } = s;
+  const { maxFiles, deadline, now, move } = o;
   const slice = zero();
   const sliceFailures: Failure[] = [];
-  const record = (path: string, o: FileOutcome) => {
-    if (o.kind === "copied") {
+  const converted: TransferResult["converted"] = [];
+  const notCopied: TransferResult["notCopied"] = [];
+  const created: TransferResult["created"] = [];
+  const record = (path: string, out: FileOutcome) => {
+    if (out.kind === "copied") {
       slice.copied++;
-      slice.bytes += o.bytes;
-      if (o.verified === "hash") slice.verifiedHash++;
-      else slice.verifiedSize++;
-    } else if (o.kind === "skipped") {
+      slice.bytes += out.bytes;
+      if (out.verified === "hash") slice.verifiedHash++;
+      else if (out.verified === "size") slice.verifiedSize++;
+      else {
+        slice.converted++;
+        if (converted.length < MAX_REPORTED) converted.push({ path, note: CONVERTED_NOTE });
+      }
+      if (out.id && created.length < MAX_REPORTED) created.push({ path, id: out.id });
+    } else if (out.kind === "skipped") {
       slice.skipped++;
-      if (o.verified === "hash") slice.verifiedHash++;
-      else slice.verifiedSize++;
-    } else if (o.kind === "failed") {
+      if (out.verified === "hash") slice.verifiedHash++;
+      else if (out.verified === "size") slice.verifiedSize++;
+    } else if (out.kind === "failed") {
       slice.failed++;
-      sliceFailures.push({ path, error: o.error });
+      sliceFailures.push({ path, error: out.error });
+    } else if (out.kind === "unsupported") {
+      slice.unsupported++;
+      if (notCopied.length < MAX_REPORTED) notCopied.push({ path, reason: out.reason });
     } else {
-      slice.bytes += o.bytes;
+      slice.bytes += out.bytes;
     }
   };
-  const runFile = async (srcEntry: Entry, dest: EntryLite, resume?: PartialFile): Promise<boolean> => {
-    let o: FileOutcome;
+  const runFile = async (srcEntry: Entry, dest: EntryLite, resume?: PartialFile, nameOverride?: string): Promise<boolean> => {
+    let out: FileOutcome;
     try {
-      o = resume ? await streamFile(s, srcEntry, dest, resume.handle.name, resume) : await transferOne(s, srcEntry, dest);
+      out = resume ? await streamFile(s, srcEntry, dest, resume.handle.name, resume) : await transferOne(s, srcEntry, dest, nameOverride);
     } catch (e) {
-      o = { kind: "failed", error: msg(e) };
+      out = { kind: "failed", error: msg(e) };
     }
-    record(srcEntry.path, o);
-    if (o.kind === "partial") {
-      c.partial = o.partial;
+    record(srcEntry.path, out);
+    if (out.kind === "partial") {
+      c.partial = out.partial;
       return false;
     }
     return true;
@@ -434,7 +608,7 @@ export async function transfer(a: TransferArgs, opts: TransferOpts): Promise<Tra
     if (token === "__single__") {
       // A single-file transfer: the queue item only carries the destination folder.
       c.queue.shift();
-      stop = !(await runFile(c.srcTop, destFolder));
+      stop = !(await runFile(c.srcTop, destFolder, undefined, c.topName));
       handled++;
       break;
     }
@@ -482,18 +656,21 @@ export async function transfer(a: TransferArgs, opts: TransferOpts): Promise<Tra
     }
   }
 
-  // Fold this slice into the totals.
-  for (const k of Object.keys(slice) as (keyof Totals)[]) c.totals[k] += slice[k];
+  // Fold this slice into the totals (cursors from before 1.0.1 lack the newer counters).
+  for (const k of Object.keys(slice) as (keyof Totals)[]) c.totals[k] = (c.totals[k] ?? 0) + slice[k];
   for (const f of sliceFailures) if (c.failures.length < MAX_REPORTED) c.failures.push(f);
   const done = c.queue.length === 0 && !c.partial;
 
   let moveInfo: TransferResult["move"];
   if (move && done) {
-    if (c.totals.failed > 0) {
-      moveInfo = { trashed: false, reason: `${c.totals.failed} item(s) failed or were not transferred; nothing was trashed. Fix them and run the transfer again (completed items are skipped).` };
+    if (c.totals.failed > 0 || c.totals.unsupported > 0) {
+      moveInfo = {
+        trashed: false,
+        reason: `${c.totals.failed + c.totals.unsupported} item(s) failed or were not transferred; nothing was trashed. Fix them and run the transfer again (completed items are skipped).`,
+      };
     } else {
       await src.trash(c.srcTop);
-      await appendAudit({ tool: "trash", account: src.label, fileId: c.srcTop.id, name: c.srcTop.name, actor: opts.actor, note: `transfer move: source trashed after every item verified at ${a.to}` });
+      await appendAudit({ tool: "trash", account: src.label, fileId: c.srcTop.id, name: c.srcTop.name, actor: o.actor, note: `transfer move: source trashed after every item verified at ${o.to}` });
       moveInfo = { trashed: true };
     }
   } else if (move) {
@@ -501,31 +678,33 @@ export async function transfer(a: TransferArgs, opts: TransferOpts): Promise<Tra
   }
 
   await appendAudit({
-    tool: "transfer",
+    tool: o.auditTool ?? "transfer",
     account: src.label,
     toAccount: dst.label,
     fileId: c.srcTop.id,
     name: c.srcTop.name,
-    from: a.from,
-    to: a.to,
-    actor: opts.actor,
+    from: o.from,
+    to: o.to,
+    actor: o.actor,
     counts: { copiedFiles: slice.copied, createdFolders: slice.folders, shortcuts: 0, skipped: slice.skipped, failed: slice.failed },
     done,
     size: slice.bytes,
-    note: `${move ? "move" : "copy"} ${src.kind}->${dst.kind}`,
+    note: `${move ? "move" : "copy"} ${src.kind}->${dst.kind}${c.streamReason ? ` streamed (${c.streamReason}); ${slice.converted} converted, ${slice.unsupported} not copied` : ""}`,
   });
 
   const t = c.totals;
   const report =
     `${done ? "Done" : "Partial (call again with cursor)"}: ${t.copied} copied, ${t.skipped} already present, ${t.folders} folders created, ${t.failed} failed; ` +
     `${t.bytes} bytes; verified by hash ${t.verifiedHash}, by size only ${t.verifiedSize}.` +
+    (t.converted ? ` ${t.converted} Google Docs/Sheets/Slides ${CONVERTED_NOTE}.` : "") +
+    (t.unsupported ? ` ${t.unsupported} item(s) not copied (see notCopied).` : "") +
     (moveInfo ? (moveInfo.trashed ? " Source moved to trash." : ` Source not trashed: ${moveInfo.reason}`) : "");
   return {
     done,
     cursor: done ? undefined : encodeTransferCursor(c),
-    from: a.from,
-    to: a.to,
-    route: route(src, dst),
+    from: o.from,
+    to: o.to,
+    route: streamRoute(s, c.streamReason),
     copied: slice.copied,
     skipped: slice.skipped,
     folders: slice.folders,
@@ -534,6 +713,10 @@ export async function transfer(a: TransferArgs, opts: TransferOpts): Promise<Tra
     verified: { hash: slice.verifiedHash, size: slice.verifiedSize },
     totals: t,
     notes: s.notes,
+    converted,
+    notCopied,
+    created,
+    ...(c.streamReason ? { streamReason: c.streamReason } : {}),
     move: moveInfo,
     report,
   };
@@ -541,7 +724,13 @@ export async function transfer(a: TransferArgs, opts: TransferOpts): Promise<Tra
 
 // ---- dry run ------------------------------------------------------------------------
 
-async function planTransfer(s: Slice, a: TransferArgs, srcTop: Entry, destParent: Entry): Promise<TransferPlan> {
+async function planTransfer(
+  s: Slice,
+  a: { from: string; to: string; move?: boolean },
+  srcTop: Entry,
+  destParent: Entry,
+  extra: { streamReason?: string; topName?: string } = {},
+): Promise<TransferPlan> {
   const issues: TransferPlan["issues"] = [];
   const issue = (path: string, text: string) => {
     if (issues.length < MAX_REPORTED) issues.push({ path, issue: text });
@@ -550,21 +739,31 @@ async function planTransfer(s: Slice, a: TransferArgs, srcTop: Entry, destParent
   let folders = 0;
   let bytes = 0;
   let exports = 0;
+  let streamed = 0;
+  let converted = 0;
+  let unsupported = 0;
   let truncated = false;
-  const visit = (e: Entry, destPath: string): string => {
-    const p = plannedName(s, e, destPath);
-    for (const n of p.notes) issue(e.path, n);
+  const visit = (e: Entry, destPath: string, nameOverride?: string): string => {
+    const p = plannedName(s, e, destPath, nameOverride);
+    if (p.unsupported) {
+      unsupported++;
+      issue(e.path, `will be skipped: ${p.unsupported}`);
+      return joinPath(destPath, p.name);
+    }
+    for (const n of p.notes) issue(e.path, p.convertTo ? `will be ${n}` : n);
     if (p.problem) issue(e.path, `will fail: ${p.problem}`);
     if (e.isFolder) folders++;
     else {
       files++;
+      if (p.convertTo) converted++;
+      else if (s.converting) streamed++;
       if (e.googleNative) exports++;
       else bytes += e.size ?? 0;
     }
     return joinPath(destPath, p.name);
   };
-  const topDest = visit(srcTop, destParent.path);
-  const existing = await s.dst.child(destParent, plannedName(s, srcTop, destParent.path).name);
+  const topDest = visit(srcTop, destParent.path, extra.topName);
+  const existing = await s.dst.child(destParent, plannedName(s, srcTop, destParent.path, extra.topName).name);
   if (existing) {
     issue(
       srcTop.path,
@@ -593,7 +792,15 @@ async function planTransfer(s: Slice, a: TransferArgs, srcTop: Entry, destParent
     }
   }
   const items = files + folders;
-  const r = route(s.src, s.dst);
+  const r = streamRoute(s, extra.streamReason);
+  const streaming = s.converting
+    ? {
+        streamed,
+        converted,
+        unsupported,
+        streamReason: extra.streamReason,
+      }
+    : {};
   return {
     dryRun: true,
     from: a.from,
@@ -603,12 +810,16 @@ async function planTransfer(s: Slice, a: TransferArgs, srcTop: Entry, destParent
     folders,
     bytes,
     exports,
+    ...streaming,
     issues,
     truncated,
     estimatedSlices: Math.max(1, Math.ceil(items / DEFAULT_TRANSFER_MAX_FILES), Math.ceil(bytes / (8 * 1024 * 1024 * 20))),
     note:
       `Nothing was written. ${files} file(s), ${folders} folder(s), ${bytes} bytes${exports ? ` plus ${exports} Google-native file(s) to export` : ""}` +
       `${truncated ? " (walk stopped early; totals are partial)" : ""}. Bytes pass through this server (${r}). ` +
+      (s.converting
+        ? `${streamed} file(s) stream byte for byte, ${converted} Google Docs/Sheets/Slides will be ${CONVERTED_NOTE}, ${unsupported} item(s) will be skipped (see issues). No permission is created on the source. `
+        : "") +
       `Run again with dryRun=false, then repeat with the returned cursor until done=true.${a.move ? " move=true trashes the source only after every item verified." : ""}`,
   };
 }
@@ -632,20 +843,36 @@ async function googleToGoogle(a: TransferArgs, g: G2G, opts: TransferOpts): Prom
   const srcTop = await g.src.stat(fromRef.path);
   const destParent = await g.dst.stat(toRef.path);
   if (!destParent.isFolder) throw new Error(`${a.to} is not a folder`);
-  const r = `${route(g.src, g.dst)} (server-side Drive copy, no bytes pass through this server)`;
+  const r = `${route(g.src, g.dst)} (server-side Drive copy through a temporary per-file reader grant on the source, removed after each file; no bytes pass through this server)`;
   const meta = { actor: opts.actor };
 
   if (!srcTop.isFolder) {
     if (a.dryRun) {
-      return { dryRun: true, from: a.from, to: a.to, route: r, files: 1, folders: 0, bytes: srcTop.size ?? 0, exports: 0, issues: [], truncated: false, estimatedSlices: 1, note: "Nothing was written. One file, copied server-side by Drive." };
+      return {
+        dryRun: true,
+        from: a.from,
+        to: a.to,
+        route: r,
+        files: 1,
+        folders: 0,
+        bytes: srcTop.size ?? 0,
+        exports: 0,
+        issues: [{ path: srcTop.path, issue: `${g.src.label} grants ${g.dst.label} temporary reader access to this one file (expires after ${TEMP_GRANT_TTL_MS / 3_600_000} h, removed right after the copy, audited)` }],
+        truncated: false,
+        estimatedSlices: 1,
+        note: "Nothing was written. One file, copied server-side by Drive.",
+      };
     }
     const existing = await g.dst.child(destParent, srcTop.name);
     let outcome: FileOutcome;
     let final: Entry | undefined;
+    const notes: string[] = [];
     if (existing) {
       outcome = compareExisting(srcTop, existing, srcTop.googleNative ? existing.size : srcTop.size);
     } else {
       const res = await copyFile({ fromAccount: g.src.label, fileId: srcTop.id, toAccount: g.dst.label, toFolderId: destParent.id }, meta);
+      if (res.warning) notes.push(res.warning);
+      if (res.note) notes.push(res.note);
       final = await g.dst.statId(res.copy.id);
       const v = srcTop.googleNative ? ({ ok: true, level: "size" } as const) : verify(srcTop, final, srcTop.size ?? 0, undefined);
       outcome = v.ok ? { kind: "copied", bytes: final.size ?? 0, verified: v.level } : { kind: "failed", error: v.error };
@@ -658,7 +885,7 @@ async function googleToGoogle(a: TransferArgs, g: G2G, opts: TransferOpts): Prom
       t[outcome.verified === "hash" ? "verifiedHash" : "verifiedSize"] = 1;
     } else if (outcome.kind === "skipped") {
       t.skipped = 1;
-      t[outcome.verified === "hash" ? "verifiedHash" : "verifiedSize"] = 1;
+      if (outcome.verified) t[outcome.verified === "hash" ? "verifiedHash" : "verifiedSize"] = 1;
     } else if (outcome.kind === "failed") {
       t.failed = 1;
       failures.push({ path: srcTop.path, error: outcome.error });
@@ -684,7 +911,10 @@ async function googleToGoogle(a: TransferArgs, g: G2G, opts: TransferOpts): Prom
       failed: failures,
       verified: { hash: t.verifiedHash, size: t.verifiedSize },
       totals: t,
-      notes: [],
+      notes,
+      converted: [],
+      notCopied: [],
+      created: final ? [{ path: srcTop.path, id: final.id }] : [],
       move: moveInfo,
       report: `Done: ${t.copied} copied, ${t.skipped} already present, ${t.failed} failed.${moveInfo ? (moveInfo.trashed ? " Source moved to trash." : ` Source not trashed: ${moveInfo.reason}`) : ""}`,
     };
@@ -706,17 +936,30 @@ async function googleToGoogle(a: TransferArgs, g: G2G, opts: TransferOpts): Prom
       folders: p.folders,
       bytes: p.bytes,
       exports: 0,
-      issues: p.shortcuts ? [{ path: srcTop.path, issue: `${p.shortcuts} shortcut(s) are re-created pointing at the same targets` }] : [],
+      issues: [
+        ...(p.shortcuts ? [{ path: srcTop.path, issue: `${p.shortcuts} shortcut(s) are re-created pointing at the same targets` }] : []),
+        ...p.predictions.map((x) => ({ path: x.name, issue: x.issue })),
+      ],
       truncated: p.truncated,
       estimatedSlices: p.calls,
       note: p.note,
     };
   }
   const t = res as CopyTreeResult;
-  const totals: Totals = { copied: t.totals.copiedFiles + t.totals.shortcuts, folders: t.totals.createdFolders, skipped: t.totals.skipped, failed: t.totals.failed, bytes: 0, verifiedHash: 0, verifiedSize: 0 };
+  const totals: Totals = {
+    copied: t.totals.copiedFiles + t.totals.shortcuts,
+    folders: t.totals.createdFolders,
+    skipped: t.totals.skipped,
+    failed: t.totals.failed,
+    bytes: 0,
+    verifiedHash: 0,
+    verifiedSize: 0,
+    converted: t.converted.length,
+    unsupported: t.notCopiedTotal,
+  };
   let moveInfo: TransferResult["move"];
   if (g.move && t.done) {
-    if (totals.failed > 0) moveInfo = { trashed: false, reason: `${totals.failed} item(s) failed; nothing was trashed` };
+    if (totals.failed > 0 || totals.unsupported > 0) moveInfo = { trashed: false, reason: `${totals.failed + totals.unsupported} item(s) failed or were not copied; nothing was trashed` };
     else {
       await g.src.trash(srcTop);
       await appendAudit({ tool: "trash", account: g.src.label, fileId: srcTop.id, name: srcTop.name, actor: opts.actor, note: `transfer move to ${a.to}` });
@@ -739,7 +982,10 @@ async function googleToGoogle(a: TransferArgs, g: G2G, opts: TransferOpts): Prom
     failed: [...t.failures, ...t.retrying].map((f) => ({ path: f.name, error: f.error })),
     verified: { hash: 0, size: 0 },
     totals,
-    notes: [t.note],
+    notes: [t.note, ...t.warnings],
+    converted: t.converted,
+    notCopied: t.notCopied,
+    created: [],
     move: moveInfo,
     report: `${t.done ? "Done" : "Partial (call again with cursor)"}: ${totals.copied} copied, ${totals.skipped} already present, ${totals.folders} folders, ${totals.failed} failed (server-side copy; Drive copies are not re-hashed).${moveInfo ? (moveInfo.trashed ? " Source moved to trash." : ` Source not trashed: ${moveInfo.reason}`) : ""}`,
   };

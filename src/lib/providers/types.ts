@@ -107,7 +107,7 @@ export interface StorageProvider {
   /** Stream a file's bytes from `offset`. Google-native files are exported (offset must be 0). */
   download(entry: Entry, offset?: number): Promise<Download>;
   /** Open an upload session for a new file `name` in `parent`; never overwrites. */
-  beginUpload(parent: Entry, name: string, size: number, contentType: string): Promise<UploadHandle>;
+  beginUpload(parent: Entry, name: string, size: number, contentType: string, opts?: { convertTo?: string }): Promise<UploadHandle>;
   /**
    * Send one chunk at `offset`. Returns the created Entry when the provider
    * finished the file with this chunk (Google, OneDrive on the last chunk),

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { readAudit } from "./audit";
-import { COPY_RETRY_BACKOFF_MS, copyTree, decodeCursor, MAX_RETRY_ROUNDS, VISIBILITY_BACKOFF_MS } from "./copytree";
+import { COPY_RETRY_BACKOFF_MS, copyTree, decodeCursor, MAX_RETRY_ROUNDS, type CopyTreeResult } from "./copytree";
 import { FOLDER_MIME, SHORTCUT_MIME } from "./drive";
 import { setStore } from "./store";
 import { fakeDrive, memoryStore, type FakeFile } from "./testing/fakeDrive";
@@ -160,7 +160,7 @@ describe("copy of a folder", () => {
     expect(b.log.filter((l) => l.method !== "GET")).toHaveLength(0);
   });
 
-  it("copies across accounts in slices: temporary share, resume cursor, share removed when done", async () => {
+  it("copies across accounts in slices with one temporary reader grant per file: the folder is never shared, nothing lingers between slices", async () => {
     const b = fakeDrive(SPECS, files());
     setDriveFetch(b.fetchImpl);
     const first = await call(tools, "copy", { ...base, maxFiles: 2 });
@@ -168,13 +168,10 @@ describe("copy of a folder", () => {
     expect(first.json).toMatchObject({ kind: "folder", crossAccount: true, done: false });
     expect(typeof first.json!.resume).toBe("string");
     const cursor = decodeCursor(first.json!.resume as string);
-    expect(cursor.share?.permissionId).toMatch(/^perm\d+$/);
+    expect(cursor.share).toBeUndefined();
     expect(cursor.pending.length).toBeGreaterThan(0);
-    const grant = b.log.find((l) => l.method === "POST" && l.path === "/drive/v3/files/co/permissions")!;
-    expect(grant).toMatchObject({ account: "work", body: { type: "user", role: "writer", emailAddress: PERSONAL } });
-    expect(grant.params.get("sendNotificationEmail")).toBe("false");
-    // The share is still in place between slices.
-    expect(b.permissions.co!.some((p) => p.emailAddress === PERSONAL)).toBe(true);
+    // Between slices nobody but the owner has access to anything.
+    for (const id of Object.keys(b.permissions)) expect(b.permissions[id]!.filter((p) => p.role !== "owner")).toEqual([]);
 
     let resume = first.json!.resume as string | undefined;
     let calls = 1;
@@ -190,15 +187,39 @@ describe("copy of a folder", () => {
     expect(last.totals).toEqual({ copiedFiles: 3, createdFolders: 3, shortcuts: 1, skipped: 0, failed: 0 });
     expect(calls).toBeGreaterThan(1);
     expect(tree(b.files, "ideas")).toEqual(EXPECTED);
-    // Copies belong to personal and were made by personal.
     for (const l of b.log.filter((x) => x.path.endsWith("/copy"))) expect(l.account).toBe("personal");
+    // No permission request on any folder; one reader grant per copied file, each removed again.
+    const grants = b.log.filter((l) => l.method === "POST" && l.path.endsWith("/permissions"));
+    expect(grants.map((g) => g.path).sort()).toEqual(["/drive/v3/files/gdoc/permissions", "/drive/v3/files/memo/permissions", "/drive/v3/files/rep/permissions"]);
+    for (const g of grants) {
+      expect(g).toMatchObject({ account: "work", body: { type: "user", role: "reader", emailAddress: PERSONAL } });
+      expect(typeof (g.body as { expirationTime?: string }).expirationTime).toBe("string");
+      expect(g.params.get("sendNotificationEmail")).toBe("false");
+    }
+    for (const id of ["co", "sub", "empty"]) expect(b.log.some((l) => l.path.startsWith(`/drive/v3/files/${id}/permissions`) && l.method !== "GET")).toBe(false);
+    for (const id of ["rep", "gdoc", "memo"]) expect(b.permissions[id]!.map((p) => p.role)).toEqual(["owner"]);
+    const audit = await readAudit(50);
+    expect(audit.filter((e) => e.tool === "temp_grant")).toHaveLength(3);
+    expect(audit.filter((e) => e.tool === "temp_grant_removed")).toHaveLength(3);
+    expect(audit.filter((e) => e.tool === "copy")).toHaveLength(calls);
+    expect(audit.some((e) => e.tool === "share" || e.tool === "unshare")).toBe(false);
+  });
+
+  it("removes the folder-wide writer share a cursor from before 1.0.1 left behind, then continues per file", async () => {
+    const b = fakeDrive(SPECS, files());
+    setDriveFetch(b.fetchImpl);
+    const first = await call(tools, "copy", { ...base, maxFiles: 1 });
+    const c = decodeCursor(first.json!.resume as string);
+    // Simulate an old cursor: a writer share on the top folder.
+    (b.permissions.co ??= [{ id: "owner-perm", type: "user", role: "owner", emailAddress: WORK }]).push({ id: "legacy1", type: "user", role: "writer", emailAddress: PERSONAL });
+    c.share = { permissionId: "legacy1" };
+    c.visible = true;
+    const resume = Buffer.from(JSON.stringify(c), "utf8").toString("base64url");
+    const next = await call(tools, "copy", { ...base, maxFiles: 150, resume });
+    expect(next.isError, next.text).toBe(false);
+    expect(next.json!.done).toBe(true);
     expect(b.permissions.co!.map((p) => p.role)).toEqual(["owner"]);
-    const revoke = b.log.find((l) => l.method === "DELETE")!;
-    expect(revoke.path).toMatch(/^\/drive\/v3\/files\/co\/permissions\/perm\d+$/);
-    const tools_ = (await readAudit(50)).map((e) => e.tool);
-    expect(tools_[0]).toBe("unshare");
-    expect(tools_[tools_.length - 1]).toBe("share");
-    expect(tools_.filter((t) => t === "copy")).toHaveLength(calls);
+    expect((await readAudit(50)).some((e) => e.tool === "temp_grant_removed" && e.permissionId === "legacy1")).toBe(true);
   });
 
   it("skips files that already exist at the destination with the same name and size", async () => {
@@ -212,89 +233,46 @@ describe("copy of a folder", () => {
     expect(tree(b.files, "ideas")).toEqual(EXPECTED);
   });
 
-  it("reports a permanent per-file failure (403) at once and still finishes", async () => {
+  it("reports a permanent per-file failure (403) at once, removes that file's grant and still finishes", async () => {
     const b = fakeDrive(SPECS, files(), { failCopyIds: ["gdoc"], failCopyStatus: 403 });
     setDriveFetch(b.fetchImpl);
     const r = await call(tools, "copy", base);
     expect(r.isError, r.text).toBe(false);
     expect(r.json).toMatchObject({ done: true, copiedFiles: 2, failed: 1, retrying: [], failures: [{ id: "gdoc", name: "Board notes", error: expect.stringMatching(/cannot be copied/) }] });
-    expect(b.permissions.co!.map((p) => p.role)).toEqual(["owner"]);
-    // No retries, no per-file share for a permanent error.
     expect(b.log.filter((l) => l.path === "/drive/v3/files/gdoc/copy")).toHaveLength(1);
-    expect(b.log.some((l) => l.method === "POST" && l.path === "/drive/v3/files/gdoc/permissions")).toBe(false);
+    // The grant made for the failed file was removed in the finally path, and audited.
+    expect(b.permissions.gdoc!.map((p) => p.role)).toEqual(["owner"]);
+    const audit = (await readAudit(50)).filter((e) => e.fileId === "gdoc").map((e) => e.tool);
+    expect(audit).toEqual(["temp_grant_removed", "temp_grant"]);
   });
 
-  describe("delayed share propagation (cross-account)", () => {
+  describe("transient failures (cross-account)", () => {
     const meta = { actor: "test" };
     const sleeps: number[] = [];
     const sleep = async (ms: number) => void sleeps.push(ms);
     beforeEach(() => sleeps.splice(0));
 
-    it("waits for the first child to become visible before copying, then copies everything", async () => {
-      // Inherited access shows up from the 3rd request per file; the poll absorbs that for the first child.
-      const b = fakeDrive(SPECS, files(), { inheritDelay: 2 });
+    it("retries a 404/5xx with backoff, keeps the file in the cursor, and gives up only after the retry rounds; no grant survives a slice", async () => {
+      const b = fakeDrive(SPECS, files(), { failCopyIds: ["gdoc"] }); // 500 on every attempt
       setDriveFetch(b.fetchImpl);
-      const r = await copyTree(base, meta, { sleep });
-      expect(r.kind).toBe("folder");
-      if (!("done" in r)) throw new Error("plan");
-      expect(r).toMatchObject({ done: true, copiedFiles: 3, shortcuts: 1, createdFolders: 3, failed: 0, failures: [], retrying: [] });
-      expect(tree(b.files, "ideas")).toEqual(EXPECTED);
-      // Poll: 2 failed getFile on the first child (404) with 0.5 s and 1 s pauses, then success.
-      const polls = b.log.filter((l) => l.account === "personal" && l.method === "GET" && l.path === "/drive/v3/files/rep");
-      expect(polls.length).toBeGreaterThanOrEqual(3);
-      expect(sleeps.slice(0, 2)).toEqual(VISIBILITY_BACKOFF_MS.slice(0, 2));
-      // Other files hit 404 twice each and were retried with the copy backoff; nothing fell back to a per-file share.
-      expect(b.log.filter((l) => l.path === "/drive/v3/files/gdoc/copy")).toHaveLength(3);
-      expect(sleeps.filter((ms) => ms === COPY_RETRY_BACKOFF_MS[0]).length).toBeGreaterThan(0);
-      expect(b.log.filter((l) => l.method === "POST" && l.path.endsWith("/permissions"))).toHaveLength(1);
-      expect(b.permissions.co!.map((p) => p.role)).toEqual(["owner"]);
-      expect(decodeCursor).toBeDefined();
-    });
-
-    it("falls back to sharing a file individually when inheritance never arrives, and removes that share", async () => {
-      const b = fakeDrive(SPECS, files(), { inheritDelay: 1000 });
-      setDriveFetch(b.fetchImpl);
-      const r = await copyTree(base, meta, { sleep });
-      if (!("done" in r)) throw new Error("plan");
-      expect(r).toMatchObject({ done: true, copiedFiles: 3, shortcuts: 1, failed: 0, retrying: [] });
-      expect(tree(b.files, "ideas")).toEqual(EXPECTED);
-      // The visibility poll gave up after the full backoff (~15 s).
-      expect(sleeps.slice(0, VISIBILITY_BACKOFF_MS.length)).toEqual(VISIBILITY_BACKOFF_MS);
-      // Each file: 4 copy attempts (1 + 3 retries) that 404, then a direct writer share, a copy and the share removed.
-      for (const id of ["rep", "gdoc", "memo"]) {
-        expect(b.log.filter((l) => l.path === `/drive/v3/files/${id}/copy`)).toHaveLength(5);
-        const grant = b.log.find((l) => l.method === "POST" && l.path === `/drive/v3/files/${id}/permissions`)!;
-        expect(grant).toMatchObject({ account: "work", body: { type: "user", role: "writer", emailAddress: PERSONAL } });
-        expect(grant.params.get("sendNotificationEmail")).toBe("false");
-        expect(b.log.some((l) => l.method === "DELETE" && l.path.startsWith(`/drive/v3/files/${id}/permissions/`))).toBe(true);
-        expect((b.permissions[id] ?? []).filter((p) => p.role !== "owner")).toEqual([]);
-      }
-      expect(b.permissions.co!.map((p) => p.role)).toEqual(["owner"]);
-    });
-
-    it("keeps transiently failing files in the cursor (done=false) and only gives up after the retry rounds", async () => {
-      const b = fakeDrive(SPECS, files(), { failCopyIds: ["gdoc"] }); // 500 on every attempt, even via the per-file share
-      setDriveFetch(b.fetchImpl);
-      let r = await copyTree(base, meta, { sleep });
-      if (!("done" in r)) throw new Error("plan");
+      let r = (await copyTree(base, meta, { sleep })) as CopyTreeResult;
       expect(r).toMatchObject({ done: false, copiedFiles: 2, failed: 0, failures: [], retrying: [{ id: "gdoc", name: "Board notes" }] });
       expect(r.note).toMatch(/transient error/);
-      expect(typeof r.resume).toBe("string");
       expect(decodeCursor(r.resume!).retry).toEqual([["gdoc", r.top.id, "Board notes", 1]]);
-      // The temporary share stays while something is still retryable.
-      expect(b.permissions.co!.some((p) => p.emailAddress === PERSONAL)).toBe(true);
+      expect(sleeps.slice(0, COPY_RETRY_BACKOFF_MS.length)).toEqual(COPY_RETRY_BACKOFF_MS);
+      expect(b.permissions.gdoc!.map((p) => p.role)).toEqual(["owner"]);
       let rounds = 1;
       while (!r.done) {
-        r = (await copyTree({ ...base, resume: r.resume }, meta, { sleep })) as typeof r;
+        r = (await copyTree({ ...base, resume: r.resume }, meta, { sleep })) as CopyTreeResult;
         rounds++;
         if (rounds > 10) throw new Error("never finished");
       }
       expect(rounds).toBe(MAX_RETRY_ROUNDS + 1);
       expect(r).toMatchObject({ done: true, failed: 1, failures: [{ id: "gdoc", error: expect.stringMatching(/cannot be copied/) }], retrying: [] });
       expect(r.totals).toMatchObject({ copiedFiles: 2, shortcuts: 1, createdFolders: 3, failed: 1 });
-      expect(b.permissions.co!.map((p) => p.role)).toEqual(["owner"]);
       expect(tree(b.files, "ideas")).toEqual(EXPECTED.filter((p) => p !== "01_Company/Board notes"));
-      const audit = (await readAudit(50)).filter((e) => e.tool === "copy");
+      for (const id of Object.keys(b.permissions)) expect(b.permissions[id]!.filter((p) => p.role !== "owner")).toEqual([]);
+      const audit = (await readAudit(100)).filter((e) => e.tool === "copy");
       expect(audit[0]!.done).toBe(true);
       expect(audit[audit.length - 1]!.done).toBe(false);
     });

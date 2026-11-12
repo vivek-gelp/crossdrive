@@ -1,4 +1,4 @@
-import { get, list, put } from "@vercel/blob";
+import { del, get, list, put } from "@vercel/blob";
 import { decryptJson, encryptJson } from "./crypto";
 import { encKey, isValidLabel, LABEL_RE } from "./config";
 import type { AccountLabel } from "./config";
@@ -67,6 +67,11 @@ export interface TextStore {
    * both sorted. Optional: without it, callers derive the same from listPaths.
    */
   listTop?(prefix: string): Promise<{ folders: string[]; files: string[] }>;
+  /**
+   * Remove one bookkeeping blob (never a user's file: the store only holds Crossdrive's own records). Optional:
+   * callers that need it fall back to writing a tombstone.
+   */
+  remove?(path: string): Promise<void>;
 }
 
 /** listTop for any store: the native one when present, else derived from a full listPaths. */
@@ -94,6 +99,9 @@ class MemoryStore implements TextStore {
   }
   async listPaths(prefix: string) {
     return [...this.data.keys()].filter((k) => k.startsWith(prefix)).sort();
+  }
+  async remove(path: string) {
+    this.data.delete(path);
   }
   async createIfAbsent(path: string, text: string) {
     if (this.data.has(path)) return false;
@@ -146,6 +154,9 @@ class BlobStore implements TextStore {
       if (isAlreadyExists(e)) return false;
       throw e;
     }
+  }
+  async remove(path: string) {
+    await del(path);
   }
   async listTop(prefix: string) {
     const folders: string[] = [];

@@ -7,7 +7,7 @@ import { executeBatch, MAX_BATCH_OPS, previewBatch, type BatchOp } from "./batch
 import { listChanges, parseSince } from "./changes";
 import { baseUrl } from "./config";
 import { assertWritable, checkName, ctxFor, currentDriveFetch, folderFromPath, inboxFolder, ownerLabel, previewPutTarget, resolvePutTarget, toResult } from "./ctx";
-import { findCrossAccountDuplicates } from "./crossdup";
+import { DEFAULT_CROSS_LIMIT, findCrossAccountDuplicates, MAX_CROSS_LIMIT } from "./crossdup";
 import { DriveClient, FOLDER_MIME, SharedDrivesUnavailableError } from "./drive";
 import { findAcross } from "./find";
 import { withResultGuard } from "./guard";
@@ -19,7 +19,9 @@ import { UNTRUSTED_NOTICE } from "./untrusted";
 import { actorOf } from "./oauth";
 import { findDuplicates, MAX_GROUPS, MAX_SCAN_PAGES, MAX_SUBTREE_FOLDERS } from "./duplicates";
 import { copyTree, DEFAULT_MAX_FILES, DRY_RUN_WALK_CAP } from "./copytree";
-import { assertCopyAllowed, copyFile, makeFolder, moveFile, previewCopy, previewMkdir, previewMove, previewRename, previewTrash, renameFile, setFileTrashed } from "./ops";
+import { isStreamCursor } from "./providers/transfer";
+import { streamCopy } from "./streamcopy";
+import { assertCopyAllowed, copyFile, planCopy, makeFolder, moveFile, previewCopy, previewMkdir, previewMove, previewRename, previewTrash, renameFile, setFileTrashed } from "./ops";
 import { createShortcut, listPermissions, shareFile, transferOwnership, unshareFile } from "./permissions";
 import { DRIVE_PREFIX, parsePathArg, pathResolver, SHARED_PREFIX } from "./paths";
 import { exportMimeFor, MAX_READ_BYTES, NoTextError, paginate, pickReader, readContent } from "./readers";
@@ -328,11 +330,26 @@ export function registerReadTools(rawServer: McpServer, opts: RegisterOpts = { f
     {
       title: "List permissions",
       description:
-        "Who has access to a file or folder: each permission with email, role (owner/writer/commenter/reader), type (user/group/domain/anyone), displayName and pendingOwner.",
-      inputSchema: z.object({ account: label, fileId: z.string() }),
+        "Who has access to a file or folder: each permission with email, role (owner/writer/commenter/reader), type (user/group/domain/anyone), displayName, pendingOwner and expirationTime; " +
+        "a permission that is a temporary grant Crossdrive made for a cross-account copy (and has not removed yet) is marked temporary=true. " +
+        "Without fileId (or with leftovers=true): every temporary copy grant Crossdrive created on this account that Drive still shows, each with how to remove it.",
+      inputSchema: z.object({
+        account: label,
+        fileId: z.string().optional(),
+        leftovers: z.boolean().optional().describe("List temporary copy grants Crossdrive created on this account that still exist (checked against Drive)"),
+      }),
       annotations: { readOnlyHint: true },
     },
-    wrap(async (a) => listPermissions(await ctxFor(a.account), a.fileId)),
+    wrap(async (a) => {
+      if (!a.fileId || a.leftovers) {
+        const { listLeftoverGrants } = await import("./tempgrant");
+        return { account: a.account, temporaryGrants: await listLeftoverGrants(a.account) };
+      }
+      const r = await listPermissions(await ctxFor(a.account), a.fileId);
+      const { openGrantIds } = await import("./tempgrant");
+      const temp = await openGrantIds(a.account, a.fileId);
+      return temp.size ? { ...r, permissions: r.permissions.map((p) => (temp.has(p.id) ? { ...p, temporary: true } : p)) } : r;
+    }),
   );
 
   server.registerTool(
@@ -344,24 +361,46 @@ export function registerReadTools(rawServer: McpServer, opts: RegisterOpts = { f
         `scope=mine (default) scans files the account owns, scope=all everything it can see including Shared Drives; restrict to a subtree with path or folderId (descendant folders capped at ${MAX_SUBTREE_FOLDERS}). ` +
         `Files smaller than minSize bytes are ignored (files without a size are kept). Groups are sorted by wasted bytes (size x extra copies); each has files (path, modifiedTime, owner) and suggestedKeep ` +
         `(shortest path, then oldest). totals cover every group found; at most ${MAX_GROUPS} groups are returned (truncated=true) and the scan reads at most ${MAX_SCAN_PAGES} pages of 1000 files (scanTruncated=true). ` +
-        "acrossAccounts=true instead finds files with the same md5 and size owned by two or more connected accounts (account, scope, path and folderId are then ignored; failing accounts are listed in errors).",
+        "acrossAccounts=true instead finds files with the same md5 and size owned by two or more connected accounts (failing accounts are listed in errors). " +
+        "In that mode accounts picks the accounts (default all), and path / paths (each label:/folder) or account+folderId restrict that account to one folder and everything below it; " +
+        `accounts without such a scope are scanned whole. Groups (largest first) come limit at a time (default ${DEFAULT_CROSS_LIMIT}, max ${MAX_CROSS_LIMIT}); ` +
+        "page has totalGroups, returned and hasMore, and page.cursor continues with the same arguments, so results are never cut silently.",
       inputSchema: z.object({
-        account: label.optional().describe("Account to scan (required unless acrossAccounts=true)"),
+        account: label.optional().describe("Account to scan (required unless acrossAccounts=true; with acrossAccounts it is the account folderId belongs to)"),
         scope: z.enum(["mine", "all"]).default("mine"),
-        path: pathArg.optional().describe("Only this folder and everything below it"),
+        path: pathArg.optional().describe("Only this folder and everything below it (with acrossAccounts: label:/folder restricts that account)"),
         folderId: z.string().optional(),
         minSize: z.number().int().min(0).default(1).describe("Ignore files smaller than this many bytes"),
         acrossAccounts: z.boolean().optional().describe("Find the same file (md5 + size) in two or more connected accounts"),
+        accounts: z.array(label).min(2).optional().describe("acrossAccounts: the accounts to compare (default all connected)"),
+        paths: z.array(pathArg).optional().describe("acrossAccounts: several label:/folder scopes, at most one per account"),
+        limit: z.number().int().min(1).max(MAX_CROSS_LIMIT).optional().describe(`acrossAccounts: groups per page (default ${DEFAULT_CROSS_LIMIT})`),
+        cursor: z.string().optional().describe("acrossAccounts: page.cursor from the previous call (same other arguments)"),
       }),
       annotations: { readOnlyHint: true },
     },
     wrap(async (a) => {
       if (a.acrossAccounts) {
-        const accounts = await requireAccounts();
-        return findCrossAccountDuplicates(
-          accounts.map((x) => x.label),
-          a.minSize,
-        );
+        const connected = (await requireAccounts()).map((x) => x.label);
+        const labels = a.accounts ?? connected;
+        const missing = labels.filter((l) => !connected.includes(l));
+        if (missing.length) throw new Error(`Not connected: ${missing.join(", ")}`);
+        const scopes: Record<string, string> = {};
+        const setScope = (lbl: string, folderId: string) => {
+          if (!labels.includes(lbl)) throw new Error(`${lbl} is not among the accounts being compared (${labels.join(", ")})`);
+          if (scopes[lbl] && scopes[lbl] !== folderId) throw new Error(`Give at most one folder per account (two were given for ${lbl})`);
+          scopes[lbl] = folderId;
+        };
+        for (const p of [...(a.path ? [a.path] : []), ...(a.paths ?? [])]) {
+          const lbl = parsePathArg(p).label ?? a.account;
+          if (!lbl) throw new Error(`With acrossAccounts, give each path with its account label (label:/folder), got "${p}"`);
+          setScope(lbl, await folderFromPath(await ctxFor(lbl), p));
+        }
+        if (a.folderId) {
+          if (!a.account) throw new Error("With acrossAccounts, folderId needs account (the account the folder belongs to)");
+          setScope(a.account, a.folderId);
+        }
+        return findCrossAccountDuplicates(labels, { minSize: a.minSize, scopes, limit: a.limit, cursor: a.cursor });
       }
       if (!a.account) throw new Error("Give account, or acrossAccounts=true");
       const c = await ctxFor(a.account);
@@ -414,13 +453,20 @@ export function registerReadTools(rawServer: McpServer, opts: RegisterOpts = { f
     "status",
     {
       title: "Account status",
-      description: "Health of each connected account (or one): connection, token, mode, mail setting and warnings that need attention on /connect. Read-only.",
+      description:
+        "Health of each connected account (or one): connection, token, mode, mail setting and warnings that need attention on /connect. " +
+        "temporaryGrants lists any temporary read grant Crossdrive created for a cross-account copy that still exists on Drive (it should be none). Read-only.",
       inputSchema: z.object({ account: optLabel }),
       annotations: { readOnlyHint: true },
     },
     wrap(async (a) => {
       const { accountStatus } = await import("./status");
-      return accountStatus(a.account);
+      const { listLeftoverGrants } = await import("./tempgrant");
+      const [st, temporaryGrants] = await Promise.all([accountStatus(a.account), listLeftoverGrants(a.account)]);
+      for (const g of temporaryGrants.open) {
+        st.warnings.push(`${g.account}: a temporary copy grant is still in place: ${g.email} has ${g.role} access to "${g.name}"; ${g.hint}.`);
+      }
+      return { ...st, temporaryGrants };
     }),
   );
 
@@ -680,13 +726,16 @@ export function registerWriteTools(rawServer: McpServer) {
     {
       title: "Copy file or folder (also across accounts)",
       description:
-        "Copy one file or a whole folder into a folder of the same or another connected account. Same account: Drive files.copy. Different accounts: the source account " +
-        "temporarily shares the item with the destination account (writer, no e-mail), the destination copies it server-side, then the temporary " +
-        "permission is removed; no bytes pass through this server. Google Docs/Sheets/Slides keep their type. " +
+        "Copy one file or a whole folder into a folder of the same or another connected account. Same account: Drive files.copy. Different accounts, writable source (method=share): " +
+        "for each file the source account grants the destination account temporary reader access to that one file (expires after 4 h, no e-mail, audited), the destination copies it " +
+        "server-side, and the grant is removed; folders are never shared, Google Docs/Sheets/Slides keep their type. Read-only source, or a file only writers may copy (method=stream): " +
+        "the file is streamed through this server and nothing is written to the source; Docs/Sheets/Slides are exported and imported back (comments, revision history and some " +
+        "formatting are not preserved), Forms and other types without an import path are listed in notCopied; a streamed single file can also return a resume cursor. " +
         `Folders are copied breadth-first (subfolders re-created, files copied, shortcuts re-created pointing at the same target) in slices of maxFiles (default ${DEFAULT_MAX_FILES}) items per call: ` +
         "the result has done=false and a resume cursor until the tree is finished; call again with the same arguments plus resume. Items already present at the destination (same name, same size) are skipped, " +
         `so a slice can be repeated safely. dryRun=true for a folder only walks the tree (up to ${DRY_RUN_WALK_CAP} items) and returns files/folders/bytes and the number of calls needed; for a file it reports the planned copy. ` +
-        "trashOriginal=true trashes the source afterwards (a folder: only its top folder, only once done=true; only if the source account can edit it). Returns source and copy with ids and paths.",
+        "trashOriginal=true trashes the source afterwards (a folder: only its top folder, only once done=true; only if the source account can edit it; refused for a read-only account). " +
+        "Returns source and copy with ids and paths, method, and temporaryGrant (or a loud warning if a grant could not be removed).",
       inputSchema: z.object({
         fromAccount: label.describe("Account that holds the source file or folder"),
         fileId: z.string().describe("Source file or folder id"),
@@ -698,7 +747,7 @@ export function registerWriteTools(rawServer: McpServer) {
         trashOriginal: z.boolean().default(false).describe("Trash the source after a successful copy (a move across accounts)"),
         dryRun: z.boolean().default(false).describe("Preview: folders count files, folders and bytes; files report the planned copy. Nothing is changed"),
         maxFiles: z.number().int().min(1).max(1000).default(DEFAULT_MAX_FILES).describe("Folders: items handled per call before a resume cursor is returned"),
-        resume: z.string().optional().describe("Folders: the resume cursor returned by the previous call"),
+        resume: z.string().optional().describe("Folders, and streamed files: the resume cursor returned by the previous call"),
       }),
       annotations: { destructiveHint: false },
     },
@@ -708,8 +757,13 @@ export function registerWriteTools(rawServer: McpServer) {
       await assertCopyAllowed(src, a.toAccount === a.fromAccount ? src : await ctxFor(a.toAccount), a.trashOriginal);
       const file = await src.drive.getFile(a.fileId);
       if (file.mimeType === FOLDER_MIME) return copyTree(a, meta);
-      if (a.resume) throw new Error("resume applies to folder copies only");
+      if (a.resume && !isStreamCursor(a.resume)) throw new Error("resume applies to folder copies, and to single files that are streamed");
       if (a.dryRun) return previewCopy(a);
+      const plan = await planCopy(a);
+      // A streamed single file can span calls (resume cursor); with trashOriginal it must finish in this call.
+      if (plan.method === "stream" && !a.trashOriginal) {
+        return streamCopy({ fromAccount: a.fromAccount, fileId: a.fileId, toAccount: a.toAccount, toFolderId: plan.toFolderId, newName: plan.name, resume: a.resume }, plan.streamReason!, meta);
+      }
       return copyFile(a, meta);
     }),
   );

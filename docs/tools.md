@@ -31,7 +31,7 @@ return the `auditId` of their audit entry (the id `undo` takes).
 | Tool | Access | Description |
 |---|---|---|
 | `accounts` | read | Connected accounts: label, provider, email, storage used and quota (Google), Gmail granted, mode (read-only or write), mail mode. OneDrive and Dropbox accounts are listed with a note instead of storage |
-| `status` | read | Per account: whether a live token refresh works (or its error), granted scopes, provider, mode, mail mode, connection age; plus configuration warnings |
+| `status` | read | Per account: whether a live token refresh works (or its error), granted scopes, provider, mode, mail mode, connection age; plus configuration warnings. `temporaryGrants` lists temporary copy grants Crossdrive created that Drive still shows (normally none) |
 | `drives` | read | Shared Drives an account belongs to, each with its `label:drive/<name>` path. A consumer (gmail.com) account returns an empty list with a note |
 
 ## Finding and browsing
@@ -44,8 +44,8 @@ return the `auditId` of their audit entry (the id `undo` takes).
 | `shared` | read | Items other people shared with the account, newest first |
 | `read` | read | File content as text: Docs, Sheets and Slides exported; PDF, docx, xlsx and text extracted. An xlsx returns its first sheet (or `sheet`) and lists all sheet names in `sheets`. A scanned PDF without a text layer returns `content: null` with a note. Paged with `offset` and `maxChars` |
 | `inbox` | read | Loose files in the root of each drive plus the configured inbox folder |
-| `permissions` | read | Who has access to a file: email, role, type, pending owner |
-| `duplicates` | read | Duplicate groups by hash or name and size, within one account (optionally under `path` or `folderId`) or, with `acrossAccounts`, across whole accounts (`account`, `path` and `folderId` are then ignored), sorted by wasted bytes, with a suggested keeper |
+| `permissions` | read | Who has access to a file: email, role, type, pending owner, expiry. A temporary copy grant that has not been removed is marked `temporary: true`. Without `fileId` (or with `leftovers: true`), the temporary copy grants on that account that Drive still shows, each checked against Drive, with how to remove it |
+| `duplicates` | read | Duplicate groups by hash or name and size, within one account (optionally under `path` or `folderId`), sorted by wasted bytes, with a suggested keeper. With `acrossAccounts`: the same md5 and size in two or more accounts. `accounts` picks the accounts, and `path`/`paths` (`label:/folder`) or `account` + `folderId` limit an account to one folder tree. Groups come `limit` at a time (default 25) with `page.totalGroups`, `page.hasMore` and `page.cursor`. `minSize` drops small files |
 | `changes` | read | Files modified since `24h`, `7d` or a date, across accounts, newest first |
 | `audit` | read | Recent write-log entries, newest first (last 60 days, or one `date`); `batchId` groups the entries of one batch |
 
@@ -61,7 +61,7 @@ return the `auditId` of their audit entry (the id `undo` takes).
 | `rename` | write | Rename a file or folder |
 | `trash`, `untrash` | write | Move to or restore from trash. Trash is the only delete |
 | `undo` | write | Reverse a move, rename, trash or untrash recorded in the audit log (by entry `id` or `batchId`); refuses copies, uploads, sharing and mail |
-| `copy` | write | Copy a file or a whole folder tree, within or across accounts. Folder copies are breadth-first and sliced; pass the returned `resume` cursor back until `done` is true. Existing items with the same name and size are skipped. `trashOriginal` makes a cross-account move |
+| `copy` | write | Copy a file or a whole folder tree, within or across accounts. Folder copies are breadth-first and sliced; pass the returned `resume` cursor back until `done` is true. Existing items with the same name and size are skipped. Across Google accounts with a writable source: a temporary `reader` grant on one file at a time (4-hour expiry, removed right after, audited; `method: "share"`). With a read-only source, or a file only writers may copy: streamed through the server, with nothing written to the source (`method: "stream"`; Docs/Sheets/Slides are converted by export/import, Forms and other types without an import are listed in `notCopied`). The dry run reports the method per file. `trashOriginal` makes a cross-account move (refused for a read-only source). See [security.md](security.md#cross-account-copies-google-to-google) |
 | `batch` | write | Up to 100 `move`, `rename`, `trash`, `copy` and `mkdir` operations. `dryRun` (default) previews with mutation counts; executing runs sequentially with per-item status and one `batchId` |
 
 ## Sharing
@@ -97,7 +97,7 @@ against live Microsoft or Dropbox accounts; they are tested against in-memory fa
 
 | Tool | Access | Description |
 |---|---|---|
-| `transfer` | write | Copy or move a file or folder tree between any two accounts, across providers. `dryRun` defaults to true. Resumable with a `cursor`, verified by size and hash where comparable; with `move`, the source is trashed only after every item verified |
+| `transfer` | write | Copy or move a file or folder tree between any two accounts, across providers. `dryRun` defaults to true. Resumable with a `cursor`, verified by size and hash where comparable; with `move`, the source is trashed only after every item verified. Google to Google follows the same two methods as `copy`: per-file reader grants for a writable source, streaming for a read-only one |
 | `cloud_list` | read | One page of a folder (`label:/path`, `pageToken`) on any provider |
 | `cloud_find` | read | Name search (content too where the provider supports it) on one account or all, optionally below a folder |
 | `cloud_read` | read | Plain-text files only, up to 2 MB |

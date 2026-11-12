@@ -14,8 +14,12 @@
 import { assertAccountWritable } from "./access";
 import { appendAudit } from "./audit";
 import { assertWritable, checkName, ctxFor, folderFromPath, inboxFolder, ownerLabel, targetFolder, toResult, type Ctx, type FileResult } from "./ctx";
+import { googleStreamReason, unstreamable } from "./copyroute";
 import { DriveError, FOLDER_MIME, type DriveFile } from "./drive";
+import { isGoogleNativeMime } from "./naming";
 import { pathResolver } from "./paths";
+import { CONVERTED_NOTE, streamById } from "./providers/transfer";
+import { grantTemporaryRead, removeTemporaryGrant, TEMP_GRANT_ROLE, TEMP_GRANT_TTL_MS } from "./tempgrant";
 
 export interface OpMeta {
   actor: string;
@@ -336,16 +340,37 @@ export interface CopyPlan {
   toPath: string;
   name: string;
   crossAccount: boolean;
+  /**
+   * same: files.copy in one account. share: the source grants the destination temporary reader access to this file,
+   * the destination copies server-side, the grant is removed. stream: download as the source, upload as the
+   * destination; nothing is written to the source account.
+   */
+  method: "same" | "share" | "stream";
+  streamReason?: string;
+  /** stream + a Google Doc/Sheet/Slides: exported and imported back. */
+  converted?: boolean;
 }
 
 export interface CopyResult {
   source: FileResult & { trashed: boolean };
   copy: FileResult;
   crossAccount: boolean;
+  method: CopyPlan["method"];
   note?: string;
+  /** The temporary grant used by the share method, and whether it was removed. */
+  temporaryGrant?: { permissionId: string; role: string; email: string; expiresAt?: string; removed: boolean };
+  /** Loud: the temporary grant could not be removed (permission id and how to remove it). */
+  warning?: string;
+  /** stream + a Google-native file: what was lost in the export/import. */
+  converted?: string;
 }
 
-/** Mode checks for a copy (also used by the folder copier's tool handler): the destination must be writable, the source too when it is trashed afterwards. */
+
+/**
+ * Mode checks for a copy (also used by the folder copier's tool handler): the destination must be writable, the
+ * source too when it is trashed afterwards. A read-only source may still be copied from: it is then streamed, and
+ * nothing (no permission either) is written to it.
+ */
 export async function assertCopyAllowed(src: Ctx, dst: Ctx, trashOriginal: boolean | undefined): Promise<void> {
   await assertAccountWritable(dst.account);
   if (trashOriginal) await assertAccountWritable(src.account);
@@ -366,7 +391,33 @@ export async function planCopy(a: CopyArgs): Promise<CopyPlan> {
   const name = a.newName ?? file.name;
   // A copy keeping its original name is never blocked; a new name must follow the naming rule unless overridden.
   checkName(name, file.mimeType, a.newName === undefined || (a.allowNonStandardName ?? false));
-  return { src, dst, file, before: await summary(src, file), toFolderId, toPath: await folderPath(dst, toFolderId), name, crossAccount: src !== dst };
+  const crossAccount = src !== dst;
+  const streamReason = crossAccount ? await googleStreamReason(src.account.label, undefined, file) : undefined;
+  if (streamReason) {
+    const no = unstreamable(file);
+    if (no) throw new Error(`not copied: ${no} (it would have to stream because ${streamReason})`);
+  }
+  return {
+    src,
+    dst,
+    file,
+    before: await summary(src, file),
+    toFolderId,
+    toPath: await folderPath(dst, toFolderId),
+    name,
+    crossAccount,
+    method: !crossAccount ? "same" : streamReason ? "stream" : "share",
+    streamReason,
+    converted: streamReason ? isGoogleNativeMime(file.mimeType) : undefined,
+  };
+}
+
+function methodText(p: CopyPlan): string {
+  if (p.method === "share") {
+    return ` (cross-account: ${p.src.account.label} grants ${p.dst.account.label} temporary ${TEMP_GRANT_ROLE} access to this one file, expiring after ${TEMP_GRANT_TTL_MS / 3_600_000} h, removed right after the copy)`;
+  }
+  if (p.method === "stream") return ` (cross-account, streamed through this server because ${p.streamReason}${p.converted ? `; ${CONVERTED_NOTE}` : ""})`;
+  return "";
 }
 
 export async function previewCopy(a: CopyArgs): Promise<OpPreview> {
@@ -375,36 +426,53 @@ export async function previewCopy(a: CopyArgs): Promise<OpPreview> {
     dryRun: true,
     op: "copy",
     mutates: true,
-    message: `copy ${p.before.name} to ${a.toAccount}:${p.toPath.replace(/^[^:]+:/, "")}${p.crossAccount ? " (cross-account)" : ""}${a.trashOriginal ? ", then trash source" : ""}`,
+    message: `copy ${p.before.name} to ${a.toAccount}:${p.toPath.replace(/^[^:]+:/, "")}${methodText(p)}${a.trashOriginal ? ", then trash source" : ""}`,
     before: { ...p.before, account: a.fromAccount },
-    after: { account: a.toAccount, path: joinPath(p.toPath, p.name), folderId: p.toFolderId },
+    after: {
+      account: a.toAccount,
+      path: joinPath(p.toPath, p.name),
+      folderId: p.toFolderId,
+      method: p.method,
+      ...(p.streamReason ? { streamReason: p.streamReason } : {}),
+      ...(p.converted ? { converted: CONVERTED_NOTE } : {}),
+    },
   };
 }
 
 /**
- * Same account: `files.copy`. Different accounts: share the source with the
- * destination account (writer, no e-mail), let the destination copy it
- * server-side, then remove that temporary permission again. No bytes pass
- * through this server. A permission the destination already had is left as is.
+ * Same account: `files.copy`. Different accounts, writable source that may share the file: the source grants the
+ * destination account temporary reader access to this one file (expiring, no e-mail, audited), the destination
+ * copies it server-side, and the grant is removed in a `finally` (a failed removal is reported loudly). A
+ * permission the destination already had is left as is. Read-only source, or a file only writers may copy: the
+ * file is streamed through this server instead (streamById) and nothing is written to the source account.
  */
 export async function copyFile(a: CopyArgs, meta: OpMeta): Promise<CopyResult> {
   const plan = await planCopy(a);
+  if (plan.method === "stream") return streamCopyFile(a, plan, meta);
   const { src, dst, file } = plan;
-  let copied: DriveFile;
-  let tempPermissionId: string | undefined;
+  let copied: DriveFile | undefined;
+  let temporaryGrant: CopyResult["temporaryGrant"];
+  let warning: string | undefined;
+  let expiryNote: string | undefined;
   try {
-    if (plan.crossAccount) {
-      const existing = (await src.drive.listPermissions(file.id)).find((p) => p.emailAddress?.toLowerCase() === dst.ownEmail);
-      if (!existing) {
-        const perm = await src.drive.createPermission(file.id, { type: "user", role: "writer", emailAddress: dst.ownEmail }, { sendNotificationEmail: false });
-        tempPermissionId = perm.id;
+    if (plan.method === "share") {
+      const g = await grantTemporaryRead(src, dst, file, { ...meta, tool: "copy" });
+      if (g.kind === "granted") {
+        temporaryGrant = { permissionId: g.grant.permissionId, role: g.grant.role, email: g.grant.email, expiresAt: g.grant.expiresAt, removed: false };
+        expiryNote = g.expiryNote;
+        try {
+          copied = await dst.drive.copy(file.id, { name: plan.name, parents: [plan.toFolderId] });
+        } finally {
+          const r = await removeTemporaryGrant(src, g.grant, meta);
+          temporaryGrant.removed = r.removed;
+          warning = r.warning;
+        }
       }
     }
-    copied = await dst.drive.copy(file.id, { name: plan.name, parents: [plan.toFolderId] });
-  } finally {
-    if (tempPermissionId) {
-      await src.drive.removePermission(file.id, tempPermissionId).catch(() => undefined);
-    }
+    copied ??= await dst.drive.copy(file.id, { name: plan.name, parents: [plan.toFolderId] });
+  } catch (e) {
+    if (warning) throw new Error(`${e instanceof Error ? e.message : String(e)}. ${warning}`);
+    throw e;
   }
   await appendAudit({
     tool: "copy",
@@ -424,10 +492,57 @@ export async function copyFile(a: CopyArgs, meta: OpMeta): Promise<CopyResult> {
     trashed = true;
     await appendAudit({ tool: "trash", account: a.fromAccount, fileId: file.id, name: file.name, owner: ownerLabel(src, file), actor: meta.actor, batchId: meta.batchId });
   }
+  let note: string | undefined;
+  if (temporaryGrant) {
+    note =
+      `Copied server-side via a temporary ${temporaryGrant.role} grant for ${dst.ownEmail} on this one file` +
+      (temporaryGrant.removed ? ", removed afterwards." : ", which could NOT be removed (see warning).") +
+      (expiryNote ? ` ${expiryNote}` : "");
+  } else if (plan.crossAccount) note = `Copied server-side: ${dst.ownEmail} already had access to the source, so no permission was changed.`;
   return {
     source: { ...(await toResult(src, file)), trashed },
     copy: await toResult(dst, copied),
     crossAccount: plan.crossAccount,
-    note: plan.crossAccount ? `Copied server-side via a temporary writer permission for ${dst.ownEmail} on the source, removed afterwards.` : undefined,
+    method: plan.method,
+    note,
+    ...(temporaryGrant ? { temporaryGrant } : {}),
+    ...(warning ? { warning } : {}),
+  };
+}
+
+/** The stream method for one file (batch and transfer; the copy tool calls streamcopy.ts for resumable results). */
+async function streamCopyFile(a: CopyArgs, plan: CopyPlan, meta: OpMeta): Promise<CopyResult> {
+  const { src, dst, file } = plan;
+  const r = await streamById(
+    { fromAccount: a.fromAccount, fileId: file.id, toAccount: a.toAccount, toFolderId: plan.toFolderId, newName: plan.name, reason: plan.streamReason! },
+    { actor: meta.actor },
+  );
+  if ("dryRun" in r) throw new Error("unexpected dry run");
+  if (r.notCopied[0]) throw new Error(`not copied: ${r.notCopied[0].reason}`);
+  if (r.failed[0]) throw new Error(`copy failed: ${r.failed[0].error}`);
+  if (!r.done) {
+    throw new Error(`${file.name} did not finish streaming within one call; copy it with the copy tool, which continues with a resume cursor`);
+  }
+  const created = r.created[0];
+  let copied: DriveFile;
+  if (created) copied = await dst.drive.getFile(created.id);
+  else {
+    const existing = await dst.drive.findChildByName(plan.toFolderId, plan.name, false);
+    if (!existing) throw new Error(`streamed copy of ${file.name} not found at the destination`);
+    copied = existing;
+  }
+  let trashed = false;
+  if (a.trashOriginal) {
+    await src.drive.setTrashed(file.id, true);
+    trashed = true;
+    await appendAudit({ tool: "trash", account: a.fromAccount, fileId: file.id, name: file.name, owner: ownerLabel(src, file), actor: meta.actor, batchId: meta.batchId });
+  }
+  return {
+    source: { ...(await toResult(src, file)), trashed },
+    copy: await toResult(dst, copied),
+    crossAccount: true,
+    method: "stream",
+    note: `Copied by streaming through this server because ${plan.streamReason}. No permission was created on the source.${created ? "" : " An identical copy already existed at the destination."}`,
+    ...(r.converted.length ? { converted: CONVERTED_NOTE } : {}),
   };
 }

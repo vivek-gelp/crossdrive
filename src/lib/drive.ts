@@ -13,8 +13,8 @@ import { fetchWithRetry, isIdempotentMethod } from "./retry";
 export const FOLDER_MIME = "application/vnd.google-apps.folder";
 export const SHORTCUT_MIME = "application/vnd.google-apps.shortcut";
 export const FILE_FIELDS =
-  "id,name,mimeType,modifiedTime,size,md5Checksum,webViewLink,parents,trashed,owners(emailAddress,me),ownedByMe,capabilities(canEdit,canAddChildren,canShare),shared,driveId,shortcutDetails(targetId,targetMimeType)";
-export const PERMISSION_FIELDS = "id,type,role,emailAddress,displayName,pendingOwner";
+  "id,name,mimeType,modifiedTime,size,md5Checksum,webViewLink,parents,trashed,owners(emailAddress,me),ownedByMe,capabilities(canEdit,canAddChildren,canShare,canDownload),copyRequiresWriterPermission,shared,driveId,shortcutDetails(targetId,targetMimeType)";
+export const PERMISSION_FIELDS = "id,type,role,emailAddress,displayName,pendingOwner,expirationTime";
 
 export interface DriveFile {
   id: string;
@@ -33,7 +33,9 @@ export interface DriveFile {
    * items shared with the account, so only `true` means "mine" (see ownership() in ctx.ts).
    */
   ownedByMe?: boolean;
-  capabilities?: { canEdit?: boolean; canAddChildren?: boolean; canShare?: boolean };
+  capabilities?: { canEdit?: boolean; canAddChildren?: boolean; canShare?: boolean; canDownload?: boolean };
+  /** Readers and commenters may not copy, print or download this file (only writers can). */
+  copyRequiresWriterPermission?: boolean;
   /** True when the file has been shared with anyone (set by Drive, not by us). */
   shared?: boolean;
   /** Set for items that live in a Shared Drive; the drive's root folder has `id === driveId`. */
@@ -59,6 +61,8 @@ export interface Permission {
   emailAddress?: string;
   displayName?: string;
   pendingOwner?: boolean;
+  /** RFC 3339; set on temporary (expiring) user/group permissions. */
+  expirationTime?: string;
 }
 
 export interface SearchOpts {
@@ -373,7 +377,7 @@ export class DriveClient {
 
   async createPermission(
     fileId: string,
-    body: { type: "user" | "group" | "domain" | "anyone"; role: string; emailAddress?: string },
+    body: { type: "user" | "group" | "domain" | "anyone"; role: string; emailAddress?: string; expirationTime?: string },
     opts: { sendNotificationEmail: boolean; emailMessage?: string; transferOwnership?: boolean },
   ): Promise<Permission> {
     const q = new URLSearchParams({

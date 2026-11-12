@@ -34,6 +34,9 @@ export interface AuditEntry {
   email?: string;
   /** share / transfer_ownership: the role granted. */
   role?: string;
+  /** temp_grant / temp_grant_removed / temp_grant_remove_failed: the Drive permission id and when it expires on its own. */
+  permissionId?: string;
+  expiresAt?: string;
   /** mail_draft / mail_send / mail_reply: every To/Cc/Bcc address and the subject. */
   recipients?: string[];
   subject?: string;

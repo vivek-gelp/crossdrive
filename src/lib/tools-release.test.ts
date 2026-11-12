@@ -296,7 +296,7 @@ describe("dry runs and conflicts", () => {
       ["untrash", { account: "work", fileId: "notes", dryRun: true }, /already out of the trash/],
       ["mkdir", { account: "work", parentPath: "work:/Docs", name: "New", dryRun: true }, /create folder New/],
       ["put", { account: "work", name: "a.txt", content: "hello", allowNonStandardName: false, dryRun: true }, /upload a\.txt to work:\/Inbox \(the folder would be created\)/],
-      ["copy", { fromAccount: "work", fileId: "notes", toAccount: "client-a", toFolderId: "croot", allowNonStandardName: false, trashOriginal: false, dryRun: true, maxFiles: 10 }, /copy notes\.txt to client-a:\/ \(cross-account\)/],
+      ["copy", { fromAccount: "work", fileId: "notes", toAccount: "client-a", toFolderId: "croot", allowNonStandardName: false, trashOriginal: false, dryRun: true, maxFiles: 10 }, /copy notes\.txt to client-a:\/ \(cross-account: work grants client-a temporary reader access to this one file/],
       ["share", { account: "work", fileId: "notes", email: "sam@example.com", role: "reader", notify: false, dryRun: true }, /grant sam@example\.com reader access/],
     ];
     for (const [tool, args, msg] of cases) {

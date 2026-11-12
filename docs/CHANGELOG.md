@@ -11,6 +11,32 @@ Code, ChatGPT) could connect; only static bearer tokens worked. 1.0.1 fixes this
 
 Security and correctness:
 
+- **A read-only account was modified when it was the source of a cross-account copy.** Before this fix, `copy` and
+  `transfer` between two Google accounts gave the destination account a temporary *writer* permission on the source
+  file, or on the whole source folder, even when the source account was set to read-only. The item's `modifiedTime`
+  changed. A folder stayed shared as writer until the copy finished, or for good if the client stopped following the
+  resume cursor. A failed removal was ignored, and the grant for a single file was not audited. Now:
+  - A read-only source is never modified: the copy is streamed through the server (download as the source, chunked
+    resumable upload as the destination), files and folder trees alike, with the same resume cursor.
+  - Google Docs/Sheets/Slides from a read-only source are exported to docx/xlsx/pptx and imported back as native files,
+    flagged "converted (export/import): comments, revision history and some formatting are not preserved". Forms and
+    other types without an import path, and shortcuts, are listed in `notCopied` with the reason. The dry run predicts
+    all of this.
+  - A writable source grants `reader` (never writer) on one file at a time, with a 4-hour `expirationTime`, and removes
+    it in a `finally` path. Folders are never shared. A file with `copyRequiresWriterPermission` is streamed instead. A
+    removal that fails is reported loudly with the permission id and the `unshare` call that removes it.
+  - Every temporary grant and removal is audited (`temp_grant`, `temp_grant_removed`, `temp_grant_remove_failed`).
+  - `status` and `permissions` list leftover grants after checking them against Drive.
+  - A folder copy resumed with a cursor from an earlier 1.0.1 build removes the old folder-wide writer share first.
+
+  The `copy` result now has `method` (`same`, `share` or `stream`). Streamed copies return the transfer engine's
+  counters (`copied`, `converted`, `notCopied`, `resume`). See
+  [security.md](security.md#cross-account-copies-google-to-google).
+- `duplicates` with `acrossAccounts` could not be narrowed. It ignored `path` and `folderId`, sorted groups largest
+  first, and was cut at the 60,000-character result limit, so small duplicates never appeared. Now `path`/`paths`
+  (`label:/folder`) or `account` + `folderId` limit an account to one folder tree, and `accounts` picks the accounts.
+  Groups come `limit` at a time (default 25) with `page.totalGroups`, `page.hasMore` and a `page.cursor` for the next
+  page, so nothing is cut silently. Accounts are scanned in parallel, at most four at a time.
 - Consent screen: the page sent `Referrer-Policy: no-referrer`, which makes Chrome send `Origin: null` on the form
   POST, and the server refused that. The page now uses `strict-origin`, and the approval no longer depends on the
   `Origin` header alone: showing the page sets a short-lived, HttpOnly, SameSite=Lax cookie that the signed consent
@@ -45,8 +71,7 @@ Fixes:
 - `transfer` with `dryRun` now refuses a read-only destination (or a read-only source with `move: true`) exactly like the real run, instead of reporting no issues.
 - Pressing Back after answering the consent screen shows "This request was already answered" (HTTP 409) instead of sending the client a `server_error`.
 - Docs: the audit log stores mail recipients and subjects; tools that take `account` need it even with a labelled path;
-  `duplicates` with `acrossAccounts` ignores `path`; connecting several Google accounts needs each signed in to the
-  browser.
+  connecting several Google accounts needs each signed in to the browser.
 - `/connect` separates signing in from connecting: the add-account form comes first, a progress line shows the three
   steps, a notice says when the signed-in e-mail is not connected yet (with a one-click connect), and each connection
   or failed consent ends on a banner naming the e-mail, label and access, or the reason.

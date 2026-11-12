@@ -30,7 +30,8 @@ removes or narrows the third leg.
   (`CROSSDRIVE_MAIL_ALLOWED_RECIPIENTS`), which the model cannot extend.
 - Sharing changes (`share`, `unshare`, `transfer_ownership`) are write operations, unavailable on read-only accounts and
   audited with the email and role.
-- Read-only accounts give an injected instruction nothing to write with.
+- Read-only accounts give an injected instruction nothing to write with, including when they are the source of a
+  cross-account copy (see "Cross-account copies" below).
 
 This reduces the blast radius; it does not make injection impossible. Do not give an AI client write access to an
 account whose content you do not control unless you accept that risk, and prefer read-only mode for mail you do not
@@ -80,7 +81,8 @@ Agents have deleted data they were told to leave alone. The rule is that safety 
 
 - No permanent delete exists: trash is the only delete, for Drive (`trashed`) and Gmail (`TRASH` label). `unshare`
   removes a permission, never a file.
-- Per-account read-only mode refuses writes before Google is called. Write tools read the account's mode and mail
+- Per-account read-only mode refuses writes before Google is called, and a read-only account used as the source of a
+  cross-account copy is only read (see below). Write tools read the account's mode and mail
   mode fresh from storage on every call (not from a per-instance cache), so a change on the connect page applies to the
   next call on every serverless instance.
 - Most write tools accept `dryRun` (the full list is in [tools.md](tools.md)); `batch` and `transfer` preview by
@@ -96,6 +98,59 @@ Agents have deleted data they were told to leave alone. The rule is that safety 
 - Responses are size-capped and paged; Google rate-limit responses are retried with backoff.
 - Long operations are split into resumable slices so no request approaches the platform limit.
 - The `/setup` page and `/health` endpoint show configuration state without revealing secrets.
+
+## Cross-account copies (Google to Google)
+
+`copy` and `transfer` between two Google accounts work in one of two ways. The choice is made in code, per file, before
+anything is written.
+
+**Before 1.0.1 a read-only account was modified when it was the source of a cross-account copy.** The source account
+gave the destination account temporary *writer* access to the file, or to the whole folder for a folder copy, and
+removed it afterwards. That was a sharing change on an account the user had marked read-only, it changed the item's
+`modifiedTime`, a folder stayed shared as writer until the last slice (or for good, if the client stopped following the
+resume cursor), a failed removal was ignored, and the single-file grant was not audited.
+
+**Share method (source account writable).**
+
+- The source account grants the destination account `reader` access, never `writer`, on one file at a time. A folder
+  is never shared: a folder copy grants per file as each file is copied, so nothing broader than the file being copied
+  is exposed, and nothing stays shared between slices or after an abandoned copy.
+- Each grant carries an `expirationTime` 4 hours ahead as a safety net, and no notification e-mail.
+- The destination copies the file server-side with `files.copy`; no bytes pass through the server. Google Docs, Sheets
+  and Slides stay native. Comments and revision history are not copied (Drive's `files.copy` never copies them).
+- The grant is removed in a `finally` path, also when the copy fails. If the removal fails, the result carries a
+  `warning` that starts with "TEMPORARY GRANT NOT REMOVED", names the permission id and gives the `unshare` call that
+  removes it.
+- Every grant (`temp_grant`) and every removal (`temp_grant_removed`, or `temp_grant_remove_failed`) is in the audit log
+  with both accounts, the file id, the role, the permission id and the expiry.
+- `status` and `permissions` (without `fileId`, or with `leftovers: true`) list grants Crossdrive created that Drive still
+  shows. Each one is checked against Drive before it is reported. `permissions` on a file marks such a grant
+  `temporary: true`.
+- If the destination account already has explicit access to the file, nothing is granted or removed.
+- If Drive refuses an expiration for a grant, the grant is made without one and the result says so. It is still removed
+  right after the copy.
+
+**Stream method (no permission change on the source).** This method is used when:
+
+- the source account is read-only;
+- a file has `copyRequiresWriterPermission` set, so readers may not copy it and Crossdrive will not grant writer;
+- the source account may not change the item's sharing.
+
+The server downloads the file as the source account and uploads it as the destination account. It uses resumable
+uploads in 8 MiB chunks, never holds a whole file in memory, and resumes with a cursor across calls. This is the same
+engine as cross-provider `transfer`.
+
+- The source account is only read. No permission, no metadata change, no trash.
+- Binary files are verified by size and MD5.
+- Google Docs, Sheets and Slides cannot be byte-copied. They are exported to docx, xlsx or pptx and imported back into
+  the native type. Each one is flagged "converted (export/import): comments, revision history and some formatting are
+  not preserved". Drive caps exports at 10 MB.
+- Native types with no import path (Forms, Sites, Drawings, Maps, ...) and shortcuts are not copied. They are listed in
+  `notCopied` with the reason (for a single file, the copy is refused with that reason).
+- The dry run reports which files will stream, which will be converted and which will be skipped.
+
+**Unchanged:** `trashOriginal` and `move: true` from a read-only source are refused, because trashing is a write. A copy
+or transfer into a read-only account is refused, dry runs included.
 
 ## Cross-provider transfers (beta)
 

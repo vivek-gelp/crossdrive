@@ -86,7 +86,7 @@ describe("copy", () => {
     expect((await readAudit(5))[0]).toMatchObject({ tool: "copy", account: "work", toAccount: "work", from: "rep", to: "root", owner: "me" });
   });
 
-  it("copies across accounts via a temporary writer permission that is removed afterwards", async () => {
+  it("copies across accounts via a temporary READER grant with an expiry that is removed afterwards and audited", async () => {
     const b = fakeDrive(SPECS, files());
     setDriveFetch(b.fetchImpl);
     const r = await call(tools, "copy", { fromAccount: "work", fileId: "gdoc", toAccount: "personal", toPath: "personal:/10_Ideas", trashOriginal: false, allowNonStandardName: false });
@@ -97,7 +97,11 @@ describe("copy", () => {
     });
     const steps = b.log.filter((l) => l.path.startsWith("/drive/v3/files/gdoc/") ).map((l) => `${l.account} ${l.method} ${l.path}`);
     const grant = b.log.find((l) => l.method === "POST" && l.path === "/drive/v3/files/gdoc/permissions")!;
-    expect(grant).toMatchObject({ account: "work", body: { type: "user", role: "writer", emailAddress: PERSONAL } });
+    expect(grant).toMatchObject({ account: "work", body: { type: "user", role: "reader", emailAddress: PERSONAL } });
+    const expiry = Date.parse((grant.body as { expirationTime: string }).expirationTime);
+    expect(expiry - Date.now()).toBeGreaterThan(3 * 3600_000);
+    expect(expiry - Date.now()).toBeLessThanOrEqual(4 * 3600_000);
+    expect(b.log.some((l) => l.method === "POST" && l.path.endsWith("/permissions") && (l.body as { role?: string }).role === "writer")).toBe(false);
     expect(grant.params.get("sendNotificationEmail")).toBe("false");
     const copyReq = b.log.find((l) => l.path === "/drive/v3/files/gdoc/copy")!;
     expect(copyReq).toMatchObject({ account: "personal", body: { name: "Board notes", parents: ["ideas"] } });
@@ -108,7 +112,13 @@ describe("copy", () => {
     expect(steps.indexOf(`personal POST /drive/v3/files/gdoc/copy`)).toBeLessThan(steps.findIndex((s) => s.startsWith("work DELETE")));
     // The temporary permission is gone; only the owner remains.
     expect(b.permissions.gdoc!.map((p) => p.role)).toEqual(["owner"]);
-    expect((await readAudit(5))[0]).toMatchObject({ tool: "copy", account: "work", toAccount: "personal", from: "gdoc", to: "ideas" });
+    const audit = await readAudit(5);
+    expect(audit.map((e) => e.tool)).toEqual(["copy", "temp_grant_removed", "temp_grant"]);
+    expect(audit[0]).toMatchObject({ tool: "copy", account: "work", toAccount: "personal", from: "gdoc", to: "ideas" });
+    expect(audit[2]).toMatchObject({ account: "work", toAccount: "personal", fileId: "gdoc", role: "reader", email: PERSONAL, permissionId: revoke.path.split("/").pop() });
+    expect(audit[2]!.expiresAt).toBe((grant.body as { expirationTime: string }).expirationTime);
+    expect(audit[1]).toMatchObject({ permissionId: audit[2]!.permissionId, fileId: "gdoc" });
+    expect(r.json).toMatchObject({ method: "share", temporaryGrant: { role: "reader", removed: true } });
   });
 
   it("leaves an existing permission of the destination account untouched", async () => {
@@ -129,7 +139,7 @@ describe("copy", () => {
     expect(r.json).toMatchObject({ kind: "folder", dryRun: true, files: 2 });
     const bad = await call(tools, "copy", { fromAccount: "work", fileId: "rep", toAccount: "personal", toFolderId: "ideas", trashOriginal: false, allowNonStandardName: false, resume: "x" });
     expect(bad.isError).toBe(true);
-    expect(bad.text).toMatch(/folder copies only/);
+    expect(bad.text).toMatch(/resume applies to folder copies/);
   });
 
   it("trashOriginal trashes the source after the copy and audits both; refused for view-only sources", async () => {
@@ -139,7 +149,7 @@ describe("copy", () => {
     expect(ok.isError, ok.text).toBe(false);
     expect((ok.json!.source as Record<string, unknown>).trashed).toBe(true);
     expect(b.files.rep!.trashed).toBe(true);
-    expect((await readAudit(5)).map((e) => e.tool)).toEqual(["trash", "copy"]);
+    expect((await readAudit(5)).map((e) => e.tool)).toEqual(["trash", "copy", "temp_grant_removed", "temp_grant"]);
 
     const ro = await call(tools, "copy", { fromAccount: "work", fileId: "ro", toAccount: "personal", toFolderId: "ideas", trashOriginal: true, allowNonStandardName: false });
     expect(ro.isError).toBe(true);

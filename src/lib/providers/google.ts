@@ -35,6 +35,21 @@ export const GOOGLE_EXPORTS: Record<string, { mime: string; ext: string }> = {
   "application/vnd.google-apps.drawing": { mime: "image/png", ext: "png" },
 };
 
+/**
+ * Native types an export can be imported back into (upload with the native mimeType as metadata: Drive converts
+ * docx -> Doc, xlsx -> Sheet, pptx -> Slides). Drawings, Forms, Sites, Maps, ... have no import path.
+ */
+export const GOOGLE_IMPORTS = new Set([
+  "application/vnd.google-apps.document",
+  "application/vnd.google-apps.spreadsheet",
+  "application/vnd.google-apps.presentation",
+]);
+
+/** The export to use when a native file must be re-created as the same native type in another Google account. */
+export function importFor(e: Entry): { mime: string; ext: string } | undefined {
+  return e.mimeType && GOOGLE_IMPORTS.has(e.mimeType) ? GOOGLE_EXPORTS[e.mimeType] : undefined;
+}
+
 export function exportFor(e: Entry): { mime: string; ext: string } | undefined {
   return e.mimeType ? GOOGLE_EXPORTS[e.mimeType] : undefined;
 }
@@ -175,10 +190,12 @@ export class GoogleProvider implements StorageProvider {
     };
   }
 
-  async beginUpload(parent: Entry, name: string, size: number, contentType: string): Promise<UploadHandle> {
+  async beginUpload(parent: Entry, name: string, size: number, contentType: string, opts?: { convertTo?: string }): Promise<UploadHandle> {
     const c = await this.ctx();
     assertWritable(await c.drive.getFile(parent.id), "addChildren");
-    const url = await c.drive.beginResumableUpload({ name, parents: [parent.id] }, contentType, size);
+    // With a native mimeType in the metadata Drive imports (converts) the upload into that Google type.
+    const meta = opts?.convertTo ? { name, parents: [parent.id], mimeType: opts.convertTo } : { name, parents: [parent.id] };
+    const url = await c.drive.beginResumableUpload(meta, contentType, size);
     return { provider: "google", session: url, parentId: parent.id, parentPath: parent.path, size, name };
   }
 

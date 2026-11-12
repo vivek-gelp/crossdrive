@@ -171,7 +171,11 @@ are never relied on.
 - **No permanent delete.** No tool exists for it and no Gmail scope that allows it is requested. Trash is recoverable.
 - **Read-only accounts** cannot reach a write tool at all: the tool is refused in code before Google is called. Every
   write reads the account's mode and mail mode fresh from storage, so a switch on the connect page (or a disconnect)
-  applies to the very next call on every server instance.
+  applies to the very next call on every server instance. A read-only account can still be the *source* of a
+  cross-account copy, and it is only read: the file is streamed through the server, and no permission is added to it.
+  Before 1.0.1 it was not: the source got a temporary writer share. Writable sources share one file at a time, as
+  reader, with a 4-hour expiry, and every grant and removal is audited
+  ([details](docs/security.md#cross-account-copies-google-to-google)).
 - **Mail modes** per account: `off`, `draft` or `send`. New accounts start at `draft`. Send can be restricted with
   `CROSSDRIVE_MAIL_ALLOWED_RECIPIENTS`. The sender is never inferred.
 - **Untrusted content.** File and mail content is returned wrapped and labelled as data, URLs found inside documents are
