@@ -60,12 +60,16 @@ Verified live:
 - Gmail: search, read, labels, reading an attachment and saving it to Drive, drafts, labelling and trashing, sending
   and replying in mode `send`, and the refusals in modes `draft` and `off`.
 - Paging of large `read` results, security headers, and the signed-out pages at phone width.
+- Claude desktop app: on 12 November 2026 the Claude desktop app connected to a live instance through a custom
+  connector. Observed working: the OAuth consent flow, `status`, `find` across three accounts, `mkdir` (dry run, then
+  real), refusal of a write on a read-only account, and `trash`.
 
 Not yet verified live:
 
 - **OneDrive and Dropbox.** Never run against live accounts; beta, tested against in-memory fakes of their APIs only.
-- **AI client apps.** No Claude app (web, desktop or mobile), Claude Code or ChatGPT was used in the live tests; they
-  used a scripted OAuth client through real Chrome. The client setup steps below follow those clients' documentation.
+- **Other AI client apps.** ChatGPT, claude.ai on the web and the Claude mobile apps: not yet tested. Claude Code was
+  not used in the live tests either. Apart from the Claude desktop check above, the live tests used a scripted OAuth
+  client through real Chrome; the other client setup steps below follow those clients' documentation.
 - **Google-native files on the streamed path.** Docs/Sheets/Slides export and re-import from a read-only source,
   Docs/Sheets/Slides staying native on the server-side path, and Forms and Drawings being skipped are covered by
   automated tests only.
@@ -263,8 +267,8 @@ Because you create the OAuth client in your own Google Cloud project, Google tre
 
 Your MCP endpoint is `<your URL>/api/mcp`.
 
-These steps follow each client's documentation. None of these apps has been used against Crossdrive in the live tests
-yet (see [What has been tested](#what-has-been-tested)); if one does not work, please open an issue.
+These steps follow each client's documentation. Of these apps, only the Claude desktop app has been used against a live
+Crossdrive instance so far (see [What has been tested](#what-has-been-tested)); if one does not work, please open an issue.
 
 - **Claude on the web and desktop:** Settings, Connectors, Add custom connector, paste the URL. Claude discovers the
   OAuth server, signs you in with an allowed email and shows you Crossdrive's consent screen; click Approve. Claude's
