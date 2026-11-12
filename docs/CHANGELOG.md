@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The logo is now served as `/favicon.ico` (16-256 px), PNG and apple-touch icons with `<link>` tags and a web manifest, as MCP `serverInfo.icons` (with `title`, `description` and `websiteUrl`), and the OAuth metadata links the privacy policy and terms.
+
 ## 1.0.1 (2026-11-12)
 
 **Upgrade if you run 1.0.0.** Two problems in 1.0.0 matter to every user:

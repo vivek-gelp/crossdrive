@@ -1,5 +1,6 @@
 import { createMcpHandler, withMcpAuth } from "mcp-handler";
-import { baseUrl, VERSION } from "@/lib/config";
+import { mcpServerInfo } from "@/lib/brand";
+import { baseUrl } from "@/lib/config";
 import { buildInstructions } from "@/lib/instructions";
 import { SCOPE_FULL, verifyBearer } from "@/lib/oauth";
 import { loadAccounts } from "@/lib/store";
@@ -10,7 +11,8 @@ export const dynamic = "force-dynamic";
 // Fluid compute: long operations (folder copies, URL uploads) still return a resume cursor well before this.
 export const maxDuration = 300;
 
-const serverInfo = { name: "crossdrive", title: "Crossdrive", version: VERSION };
+// name, title, version, description, websiteUrl and (on https) icons; see src/lib/brand.ts.
+const serverInfo = mcpServerInfo(baseUrl());
 
 /**
  * Handlers keyed by (scope, instructions). The instructions are generated per

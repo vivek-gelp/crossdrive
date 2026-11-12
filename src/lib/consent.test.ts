@@ -326,6 +326,8 @@ describe("dynamic client registration hardening", () => {
         "token_endpoint_auth_methods_supported",
         "code_challenge_methods_supported",
         "service_documentation",
+        "op_policy_uri",
+        "op_tos_uri",
       ].sort(),
     );
     expect(authorizationServerMetadata().code_challenge_methods_supported).toEqual(["S256"]);

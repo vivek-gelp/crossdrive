@@ -29,7 +29,9 @@ Defined in `app/ui.css`, with dark values under `prefers-color-scheme: dark`. Do
 
 ## Logo
 
-Files in `public/brand/`: `crossdrive-mark.svg` (square), `crossdrive-logo.svg` (on light), `crossdrive-logo-dark.svg` (on dark), `social-card.svg` / `.png` (1280×640), `crossdrive-mark-512.png`. Favicon: `app/icon.svg`.
+Files in `public/brand/`: `crossdrive-mark.svg` (square), `crossdrive-logo.svg` (on light), `crossdrive-logo-dark.svg` (on dark), `social-card.svg` / `.png` (1280×640), `crossdrive-mark-512.png`. Site and MCP icons (`public/favicon.ico`, `icon.svg`, `icon-{32,48,192,512}.png`, `apple-touch-icon.png`) are
+generated from `crossdrive-mark.svg` by `node scripts/make-icons.mjs`; `src/lib/brand.ts` lists them for the HTML
+`<link>` tags, the web manifest and the MCP `serverInfo.icons`.
 
 - The mark is two rounded squares on a 64 grid (teal 4–40, amber 24–60, radius 9); their overlap is a darker lens that reads as an X. Keep teal top-left, amber bottom-right.
 - The wordmark is lowercase `crossdrive`, drawn as monoline paths (no font needed). The dot of the i is amber; everything else is one colour.

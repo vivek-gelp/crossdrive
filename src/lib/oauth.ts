@@ -52,6 +52,10 @@ export function authorizationServerMetadata() {
     token_endpoint_auth_methods_supported: ["none"],
     code_challenge_methods_supported: ["S256"],
     service_documentation: `${base}/`,
+    // RFC 8414 section 2. Neither RFC 8414 nor RFC 9728 defines a logo field for a server (RFC 7591 logo_uri
+    // describes a client), so the logo is advertised by favicon and MCP serverInfo.icons instead.
+    op_policy_uri: `${base}/privacy`,
+    op_tos_uri: `${base}/terms`,
   };
 }
 
@@ -64,6 +68,9 @@ export function protectedResourceMetadata() {
     bearer_methods_supported: ["header"],
     resource_name: "Crossdrive",
     resource_documentation: `${base}/`,
+    // RFC 9728 section 2.
+    resource_policy_uri: `${base}/privacy`,
+    resource_tos_uri: `${base}/terms`,
   };
 }
 
