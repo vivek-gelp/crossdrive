@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Crossdrive — one safe connection from your AI to every drive you own</title>
-<meta name="description" content="Crossdrive is a self-hosted MCP server giving your AI one safe connection to every Google Drive and Gmail account you own. Trash only, audited, MIT licensed.">
+<title>Crossdrive — every drive you own, one safe connection for your AI</title>
+<meta name="description" content="Crossdrive is a self-hosted MCP server for Google Drive and Gmail: every account under a label, rules per account enforced on the server, copy and search between accounts. MIT licensed.">
 <link rel="canonical" href="https://vivek-gelp.github.io/crossdrive/">
 <meta name="theme-color" content="#F7F5F0" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0E1116" media="(prefers-color-scheme: dark)">
@@ -12,7 +12,7 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Crossdrive">
 <meta property="og:title" content="Crossdrive — every drive you own, one safe connection for your AI">
-<meta property="og:description" content="A self-hosted MCP server for several Google Drive and Gmail accounts at once. Trash only, audited, MIT licensed.">
+<meta property="og:description" content="A self-hosted MCP server for Google Drive and Gmail: labelled accounts, read-only and mail mode per account, trash-only delete, audit log, copy and search between accounts. MIT licensed.">
 <meta property="og:url" content="https://vivek-gelp.github.io/crossdrive/">
 <meta property="og:image" content="https://vivek-gelp.github.io/crossdrive/brand/social-card.png">
 <meta property="og:image:width" content="1280">
@@ -20,10 +20,10 @@
 <meta property="og:image:alt" content="Crossdrive logo: two overlapping rounded squares, teal and amber">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Crossdrive — every drive you own, one safe connection for your AI">
-<meta name="twitter:description" content="A self-hosted MCP server for several Google Drive and Gmail accounts at once. Trash only, audited, MIT licensed.">
+<meta name="twitter:description" content="A self-hosted MCP server for Google Drive and Gmail: labelled accounts, read-only and mail mode per account, trash-only delete, audit log, copy and search between accounts. MIT licensed.">
 <meta name="twitter:image" content="https://vivek-gelp.github.io/crossdrive/brand/social-card.png">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"SoftwareSourceCode","name":"Crossdrive","description":"A self-hosted remote MCP server that gives AI assistants one safe connection to several Google Drive and Gmail accounts, with OneDrive and Dropbox in beta.","codeRepository":"https://github.com/vivek-gelp/crossdrive","license":"https://opensource.org/licenses/MIT","programmingLanguage":"TypeScript","url":"https://vivek-gelp.github.io/crossdrive/"}
+{"@context":"https://schema.org","@type":"SoftwareSourceCode","name":"Crossdrive","description":"A self-hosted remote MCP server that puts every Google Drive and Gmail account under a label, enforces read-only, mail mode and trash-only delete per account on the server, and copies, moves and searches between accounts, with OneDrive and Dropbox in beta.","codeRepository":"https://github.com/vivek-gelp/crossdrive","license":"https://opensource.org/licenses/MIT","programmingLanguage":"TypeScript","url":"https://vivek-gelp.github.io/crossdrive/"}
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -118,7 +118,7 @@ footer.wrap p{margin:0;flex-basis:100%}
 <main id="main" class="wrap">
   <section class="hero" aria-labelledby="h-hero">
     <h1 id="h-hero">Every drive you own. One safe connection for your AI.</h1>
-    <p class="sub">Claude's Drive connector sees one Google account. Crossdrive sees all of them, plus OneDrive and Dropbox in beta, through a single URL you host yourself.</p>
+    <p class="sub">A guarded file-and-mail layer you host yourself. Every account sits under its own label, the server enforces the rules for each one, and files can be copied, moved and searched between accounts. Google Drive and Gmail, with OneDrive and Dropbox in beta.</p>
     <div class="row" style="margin-top:24px">
       <a class="btn btn-primary" href="https://github.com/vivek-gelp/crossdrive">Get it on GitHub</a>
       <a class="btn" href="https://github.com/vivek-gelp/crossdrive/blob/main/docs/setup-vercel.md">Deploy guide</a>
@@ -145,13 +145,25 @@ Yes.</p>
     <div id="demo"></div>
   </section>
 
+  <section class="card" aria-labelledby="h-need">
+    <h2 id="h-need" style="margin-top:0">Do you need this?</h2>
+    <p>Perhaps not. As of mid-November 2026 there are user reports (one Reddit thread) that Claude's built-in Gmail and Drive connectors are gaining support for several accounts in a gradual rollout. We could not confirm this from Anthropic's documentation or test it ourselves. If you have it, and you only need to read and draft across a few Google accounts inside Claude, use it: it needs no setup.</p>
+    <p>Crossdrive is for when you want:</p>
+    <ul>
+      <li><strong>Rules per account, enforced on the server:</strong> read-only accounts, mail off, draft or send per account, trash-only delete, dry run, undo and an audit log.</li>
+      <li><strong>Work between accounts:</strong> copy or move files and folder trees, find duplicates across accounts, one search that names any account that failed.</li>
+      <li><strong>Your own hosting, not tied to one AI vendor:</strong> tokens in your own storage, and any MCP client can connect (only the Claude desktop app verified so far).</li>
+      <li><strong>OneDrive or Dropbox beside Google</strong> (beta, not yet tested on live accounts).</li>
+    </ul>
+  </section>
+
   <section aria-labelledby="h-what">
     <h2 id="h-what">What it does</h2>
     <div class="grid">
-      <div class="card"><h3>Every account, one connection</h3><p>Connect several Google accounts and give each a label. Your assistant addresses files as <code>work:/Finance/2026</code> or <code>personal:/Taxes</code> and searches across all of them at once.</p></div>
-      <div class="card"><h3>Across clouds (BETA)</h3><p>Move and copy files and whole folders between accounts, and between Google Drive, OneDrive and Dropbox, without downloading anything to your laptop. OneDrive and Dropbox support is beta and not yet tested against live accounts.</p></div>
-      <div class="card"><h3>Gmail, draft-only by default</h3><p>Search and read mail in each connected Gmail account, save attachments to the right folder, and prepare replies. Sending stays off until you turn it on per account.</p></div>
-      <div class="card"><h3>One URL for your AI clients</h3><p>It is a remote MCP server with OAuth, meant for any client that can add one, such as Claude, Claude Code or ChatGPT. The live tests used a scripted OAuth client in Chrome; those apps have not been tried against it yet.</p></div>
+      <div class="card"><h3>Every account under a label</h3><p>Connect your Google accounts and give each a label. Every request names its account, as in <code>work:/Finance/2026</code> or <code>personal:/Taxes</code>, so nothing is ever done in whichever account happens to be connected.</p></div>
+      <div class="card"><h3>Between accounts</h3><p>Copy or move files and whole folder trees from one account to another, with the source trashed only after a move is verified. Find duplicates across accounts, and search every account at once with any account that failed named. Between Google Drive, OneDrive and Dropbox this is beta and not yet tested against live accounts.</p></div>
+      <div class="card"><h3>Mail mode per account</h3><p>Each Gmail account is set to off, draft or send on its own, so a work account can stay draft-only while another may send. New accounts start at draft. Search, read, label and save attachments to the right folder.</p></div>
+      <div class="card"><h3>Not tied to one AI app</h3><p>It is a remote MCP server with OAuth, meant for any client that can add one, and your tokens stay in your own storage. So far only the Claude desktop app has been verified as a client; Claude Code, ChatGPT and others are untested.</p></div>
     </div>
   </section>
 
@@ -181,12 +193,13 @@ Yes.</p>
   <section aria-labelledby="h-compare">
     <h2 id="h-compare">How it compares</h2>
     <ul>
-      <li><strong>Where it helps:</strong> if you have several Google accounts, Crossdrive puts them under one URL with labels you choose, and search fans out across them. The built-in connector sees one account per connector.</li>
+      <li><strong>Where it helps:</strong> when you want rules per account that the server enforces (read-only, mail off, draft or send), operations between accounts (copy, move, duplicates, one search that names any failed account), or a connection that is not tied to one AI app.</li>
+      <li><strong>Where the built-in connector is better:</strong> for reading and drafting inside Claude it needs no setup. Anthropic's documentation described one connected Google account per connector (checked 12 November 2026); there are user reports, unconfirmed, of a multi-account rollout. If you have it and that is all you need, use it.</li>
       <li><strong>Where it is narrower:</strong> on Google it covers Drive and Gmail only, by design. For Docs editing, Sheets formulas or Calendar, use another server; running both is fine.</li>
-      <li><strong>Where it costs more effort:</strong> you bring your own Google Cloud project and a Vercel deploy. With a single Google account and a wish to chat with your files, the built-in connector is the least work.</li>
+      <li><strong>Where it costs more effort:</strong> you bring your own Google Cloud project and a Vercel deploy, and only the Claude desktop app has been verified as a client so far.</li>
     </ul>
     <p class="muted">A fuller, sourced table is in the <a href="https://github.com/vivek-gelp/crossdrive#how-it-compares">README</a>.</p>
-    <p class="muted">Not sure Crossdrive is what you need? <a href="blog/several-google-accounts-with-claude.html">Using several Google accounts with Claude</a> walks through four ways to do it, including ones that need no new software.</p>
+    <p class="muted">Not sure Crossdrive is what you need? <a href="blog/several-google-accounts-with-claude.html">Several Google accounts with an AI assistant</a> (updated 13 November 2026) walks through four ways to do it, including the built-in connector and other options that need no new software.</p>
   </section>
 
   <section aria-labelledby="h-start">
