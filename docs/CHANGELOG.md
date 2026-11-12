@@ -47,6 +47,9 @@ Fixes:
 - Docs: the audit log stores mail recipients and subjects; tools that take `account` need it even with a labelled path;
   `duplicates` with `acrossAccounts` ignores `path`; connecting several Google accounts needs each signed in to the
   browser.
+- `/connect` separates signing in from connecting: the add-account form comes first, a progress line shows the three
+  steps, a notice says when the signed-in e-mail is not connected yet (with a one-click connect), and each connection
+  or failed consent ends on a banner naming the e-mail, label and access, or the reason.
 
 Earlier in 1.0.1:
 

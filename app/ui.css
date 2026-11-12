@@ -454,6 +454,157 @@ input[type="radio"] {
   font-size: 0.85rem;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---------- Connect page ---------- */
+/* Primary card: the one thing to do on the page. */
+.card-primary {
+  border: 2px solid var(--accent);
+}
+
+/* Banners: result of the last action, or something that needs attention. */
+.notice {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--text-muted);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+}
+
+.notice > :last-child {
+  margin-bottom: 0;
+}
+
+.notice-ok {
+  border-left-color: var(--ok);
+  background: var(--ok-bg);
+}
+
+.notice-warn {
+  border-left-color: var(--warn);
+  background: var(--warn-bg);
+}
+
+.notice-err {
+  border-left-color: var(--err);
+  background: var(--err-bg);
+}
+
+.notice.stack {
+  gap: 10px;
+}
+
+.notice pre {
+  margin: 0;
+}
+
+/* Inline label input in the "not connected yet" notice. */
+input.input-label:not([type="checkbox"]):not([type="radio"]) {
+  width: 12em;
+  max-width: 100%;
+}
+
+/* Progress line: 1 Sign in, 2 Connect an account, 3 Add to your AI client. */
+.steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 0;
+}
+
+.step-n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5em;
+  height: 1.5em;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.step-done {
+  color: var(--ok);
+}
+
+.step-done .step-n {
+  border-color: var(--ok);
+  background: var(--ok-bg);
+}
+
+/* CSS checkmark after a finished step. */
+.step-done::after {
+  content: "";
+  display: inline-block;
+  width: 0.35em;
+  height: 0.7em;
+  margin-left: 2px;
+  border: solid var(--ok);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) translateY(-2px);
+}
+
+.step-next {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.step-next .step-n {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.step-tag {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.chips {
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 2px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+
+.chip:hover {
+  border-color: var(--accent);
+  text-decoration: none;
+}
+
 /* ---------- Landing page ---------- */
 .hero {
   padding: 24px 0 8px;

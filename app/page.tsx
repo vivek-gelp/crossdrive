@@ -145,15 +145,19 @@ export default function Home() {
       <section className="card stack">
         <h2 style={{ margin: 0 }}>Connect an assistant</h2>
         <p className="muted">
-          Add this URL as a custom connector (remote MCP server) in your client. It will ask you to sign in and approve
-          access.
+          First connect your cloud accounts on the connect page: sign in there to manage this instance, then connect each
+          account under a label. Signing in alone connects nothing.
+        </p>
+        <p className="muted">
+          Then add this URL as a custom connector (remote MCP server) in your client. It will ask you to sign in and
+          approve access.
         </p>
         <pre className="endpoint" aria-label="MCP endpoint URL" title="Click to select">
           <code>{endpoint}</code>
         </pre>
         <div className="row">
           <Link href="/connect" className="btn">
-            Manage accounts
+            Connect cloud accounts
           </Link>
           <span className="muted" style={{ fontSize: "0.875rem" }}>
             Streamable HTTP · OAuth 2.1

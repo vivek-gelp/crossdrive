@@ -58,7 +58,8 @@ export default async function SetupPage() {
           ))}
         </ul>
         <p className="muted">
-          MCP clients connect to <code>{base}/api/mcp</code>.
+          Next, on <a href="/connect">/connect</a>: sign in to manage this instance, then connect each cloud account under
+          a label (signing in alone connects nothing). MCP clients connect to <code>{base}/api/mcp</code>.
         </p>
       </section>
       {providerRedirects.length > 0 && (

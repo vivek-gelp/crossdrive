@@ -75,8 +75,9 @@ Optional variables are described in the [README configuration table](../README.m
    names; the legacy `VAULT_` names also count), whether a Blob store token is set, whether the secrets have the right
    length, whether the Google client ID and secret look real (not placeholders) and whether the base URL matches the
    address you opened. Fix anything marked fail and redeploy.
-2. Open `<BASE_URL>/connect`. Sign in with an email from `CROSSDRIVE_ALLOWED_EMAILS`.
-3. Add your first account: type a label (lowercase letters, digits and hyphens, starting with a letter, up to 24
+2. Open `<BASE_URL>/connect`. Sign in with an email from `CROSSDRIVE_ALLOWED_EMAILS`. This only opens the admin
+   page; no account is connected yet, even the one you signed in with.
+3. Connect your first account in **Connect a cloud account** at the top of the page: type a label (lowercase letters, digits and hyphens, starting with a letter, up to 24
    characters, such as `work`), optionally the account's email to pre-select it, and click **Connect Google**. Tick
    every permission. A new account starts as read + write with mail mode `draft`; switch it to read-only or change the
    mail mode (`off`, `draft` or `send`) on its card afterwards.

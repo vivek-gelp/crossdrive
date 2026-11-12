@@ -57,8 +57,10 @@ button creates a copy of the repo and needs a new name.
 3. **Open `<your URL>/setup`.** It checks every variable (including placeholder text left in the Google client id or
    secret) and lists the two redirect URIs to add to the Google client: `<your URL>/api/google/callback` and
    `<your URL>/oauth/google-callback`.
-4. **Connect your accounts** at `<your URL>/connect`: pick a label (for example `work`, `personal`, `clientco`) and sign
-   in with that Google account. New accounts start as read + write with mail as drafts only; switch an account to
+4. **Connect your accounts** at `<your URL>/connect`, in two steps. First sign in with an e-mail from
+   `CROSSDRIVE_ALLOWED_EMAILS`; this only opens the admin page and connects nothing. Then, in **Connect a cloud
+   account**, pick a label (for example `work`, `personal`, `clientco`), click **Connect Google** and choose that
+   Google account. The page confirms each connection by e-mail and label. New accounts start as read + write with mail as drafts only; switch an account to
    read-only or change its mail mode on its card. Repeat for each account. Google signs you in with the browser's own
    Google session: to connect several accounts, sign each of them in to the browser first (or be ready for Google to ask
    for that account's password).
