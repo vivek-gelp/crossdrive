@@ -7,21 +7,28 @@ const GITHUB = "https://github.com/vivek-gelp/crossdrive";
 
 const WHAT = [
   {
-    title: "Every account, one connection",
-    body: "Connect several Google accounts and give each a label. Your assistant addresses files as work:/Finance/2026 or personal:/Taxes and searches across all of them at once.",
+    title: "Every account under a label",
+    body: "Connect your Google accounts and give each a label. Every request names its account, as in work:/Finance/2026 or personal:/Taxes, so nothing is ever done in whichever account happens to be connected.",
   },
   {
-    title: "Across clouds (BETA)",
-    body: "Move and copy files and whole folders between accounts, and between Google Drive, OneDrive and Dropbox, without downloading anything to your laptop. OneDrive and Dropbox support is beta and not yet tested against live accounts.",
+    title: "Between accounts",
+    body: "Copy or move files and whole folder trees from one account to another, with the source trashed only after a move is verified. Find duplicates across accounts, and search every account at once with any account that failed named. Between Google Drive, OneDrive and Dropbox this is beta and not yet tested against live accounts.",
   },
   {
-    title: "Gmail, draft-only by default",
-    body: "Search and read mail in each connected Gmail account, save attachments to the right folder, and prepare replies. Sending stays off until you turn it on per account.",
+    title: "Mail mode per account",
+    body: "Each Gmail account is set to off, draft or send on its own, so a work account can stay draft-only while another may send. New accounts start at draft. Search, read, label and save attachments to the right folder.",
   },
   {
-    title: "One URL for your AI clients",
-    body: "It is a remote MCP server with OAuth, meant for any client that can add one, such as Claude, Claude Code or ChatGPT. The live tests used a scripted OAuth client in Chrome; those apps have not been tried against it yet.",
+    title: "Not tied to one AI app",
+    body: "It is a remote MCP server with OAuth, meant for any client that can add one, and your tokens stay in your own storage. So far only the Claude desktop app has been verified as a client; Claude Code, ChatGPT and others are untested.",
   },
+];
+
+const NEED = [
+  "Rules per account, enforced on the server: read-only accounts, mail off, draft or send per account, trash-only delete, dry run, undo and an audit log.",
+  "Work between accounts: copy or move files and folder trees, find duplicates across accounts, one search that names any account that failed.",
+  "Your own hosting, not tied to one AI vendor: tokens in your own storage, and any MCP client can connect (only the Claude desktop app verified so far).",
+  "OneDrive or Dropbox beside Google (beta, not yet tested on live accounts).",
 ];
 
 const SAFETY = [
@@ -58,8 +65,9 @@ export default function Home() {
       <section className="hero">
         <h1>Every drive you own. One safe connection for your AI.</h1>
         <p className="sub">
-          Claude&apos;s Drive connector sees one Google account. Crossdrive sees all of them, plus OneDrive and Dropbox
-          in beta, through a single URL you host yourself.
+          A guarded file-and-mail layer you host yourself. Every account sits under its own label, the server enforces
+          the rules for each one, and files can be copied, moved and searched between accounts. Google Drive and
+          Gmail, with OneDrive and Dropbox in beta.
         </p>
         <div className="row" style={{ marginTop: 24 }}>
           <Link href="/setup" className="btn btn-primary">
@@ -102,6 +110,22 @@ export default function Home() {
             </p>
           </div>
         </div>
+      </section>
+
+      <section className="card stack">
+        <h2 style={{ margin: 0 }}>Do you need this?</h2>
+        <p>
+          Perhaps not. As of mid-November 2026 there are user reports (one Reddit thread) that Claude&apos;s built-in
+          Gmail and Drive connectors are gaining support for several accounts in a gradual rollout. We could not
+          confirm this from Anthropic&apos;s documentation or test it ourselves. If you have it, and you only need to
+          read and draft across a few Google accounts inside Claude, use it: it needs no setup.
+        </p>
+        <p style={{ margin: 0 }}>Crossdrive is for when you want:</p>
+        <ul style={{ margin: 0 }}>
+          {NEED.map((n) => (
+            <li key={n}>{n}</li>
+          ))}
+        </ul>
       </section>
 
       <section>

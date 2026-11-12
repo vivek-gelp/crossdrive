@@ -13,17 +13,36 @@
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-remote%20server-5b4bdb.svg" alt="MCP remote server"></a>
 </p>
 
-Crossdrive is a self-hosted remote [MCP](https://modelcontextprotocol.io) server that gives an AI client one URL onto
-several Google Drive and Gmail accounts at once (OneDrive and Dropbox in beta). It is meant for any client that can add
-a remote MCP server with OAuth, such as Claude, Claude Code or ChatGPT. You name each account with a label you choose, and files are addressed as `work:/Projects/2026` instead of "whichever Google
-account this connector happens to be signed into". You run it in your own Vercel project with your own Google OAuth
-client, so your tokens and your files never touch anyone else's infrastructure.
+Crossdrive is a guarded file-and-mail layer between an AI client and your Google Drive and Gmail accounts (OneDrive
+and Dropbox in beta), run as a remote [MCP](https://modelcontextprotocol.io) server you host yourself. Every account
+sits under a label you choose, so a request always names `work:/Contracts` or `personal:/Taxes` and nothing is ever
+done "in whichever account". The rules are enforced by the server, not by the chat app: each account can be read-only,
+each Gmail account has its own mail mode (off, draft or send), delete means trash, writes can be dry-run first and
+undone, every write is audited, and unknown arguments are refused. It also works between accounts: copy files and
+folder trees from one account to another, or move them with the source trashed only after the copy is verified; find
+duplicates across accounts; and search every account at once, with any account that failed named in the result. It
+speaks plain MCP rather than belonging to one AI vendor, and your tokens stay in your own Vercel storage. So far only
+the Claude desktop app has been verified as a client.
 
-It exists because built-in connectors see one Google account, fail silently when they cannot see something, and give
-the model destructive tools with the safety rules living only in a prompt. Crossdrive puts the rules in code: trash is
-the only delete, mail is draft-only by default, every write is audited, and each account can be read-only.
+## Do you need this?
 
-Not sure you need it? [Using several Google accounts with Claude: why it is hard, and four ways to do it](https://vivek-gelp.github.io/crossdrive/blog/several-google-accounts-with-claude.html) compares the options, including ones that need no new software.
+Perhaps not. As of mid-November 2026 there are user reports (one Reddit thread) that Claude's built-in Gmail and Drive
+connectors are gaining support for several accounts in a gradual rollout. We could not confirm this from Anthropic's
+documentation, which describes one connected account (checked 12 November 2026), or test it ourselves. If you have it,
+and you only need to read and draft across a few Google accounts inside Claude, use it: it needs no setup.
+
+Crossdrive is for when you want one or more of these:
+
+- **Rules per account, enforced on the server:** read-only accounts, mail off, draft or send per account, trash-only
+  delete, dry run, undo and an audit log.
+- **Work between accounts:** copy or move files and folder trees, find duplicates across accounts, one search that names
+  any account that failed.
+- **Your own hosting, not tied to one AI vendor:** tokens in your own storage, and any MCP client can connect (only
+  the Claude desktop app has been verified so far).
+- **OneDrive or Dropbox beside Google** (beta, not yet tested on live accounts).
+
+If you do not have it yet, [Several Google accounts with an AI assistant: the built-in options, and when you still need more](https://vivek-gelp.github.io/crossdrive/blog/several-google-accounts-with-claude.html)
+compares the other ways, including ones that need no new software.
 
 <!-- DEMO GIF: 20 seconds, recorded with a client that has actually been tested against Crossdrive, "copy the signed contract from my company drive into my personal drive" -->
 
@@ -119,14 +138,17 @@ button creates a copy of the repo and needs a new name.
 
 ## How it compares
 
-Facts below are drawn from public issue trackers and documentation and were last checked in November 2026. Things move
-quickly; please open an issue if a row is out of date.
+Facts below are drawn from public issue trackers, documentation and user reports, and were last checked on 13 November
+2026. Things move quickly; please open an issue if a row
+is out of date. "Not known" means we could not find it documented and have not tested it.
 
 | | Claude's built-in Drive/Gmail connector | Google's official Drive and Gmail MCP servers | taylorwilsdon/google_workspace_mcp | Crossdrive |
 |---|---|---|---|---|
-| Several Google accounts under one URL | One account per connector; a request to attach two connectors to the same URL is open with no reply | Not documented as a feature | A documented weak spot: OAuth 2.1 mode binds one identity per session, and a per-account client pull request was closed unmerged in November 2026 | Yes: user-chosen labels, `label:/path` addressing |
-| Search across accounts | No | Not documented | Not in OAuth 2.1 mode (one identity per session) | `find` fans out and reports per-account errors and `partial` |
-| Cross-account copy of folder trees | Not offered, to our knowledge | Not offered, to our knowledge | Not offered, to our knowledge | Yes, resumable; Drive's server-side copy from a writable source, streamed through your deployment from a read-only one |
+| Several Google accounts | One account per connector per Anthropic's help page (12 Nov 2026); user reports of a multi-account rollout, unconfirmed. For custom connectors, a request to attach two with the same URL is open | Not documented as a feature | A documented weak spot: OAuth 2.1 mode binds one identity per session, and a per-account client pull request was closed unmerged in November 2026 | Yes: user-chosen labels, `label:/path` addressing |
+| Search across accounts in one request | Not known | Not documented | Not in OAuth 2.1 mode (one identity per session) | `find` fans out and reports per-account errors and `partial` |
+| Cross-account copy or move of files and folder trees | Not known | Not offered, to our knowledge | Not offered, to our knowledge | Yes, resumable; Drive's server-side copy from a writable source, streamed through your deployment from a read-only one; `transfer` moves only after verifying |
+| Permission controls | Per tool (always allow, needs approval, blocked), per the same user report; whether they can differ per account is not known | Not assessed here | Not assessed here | Per account, on the server: read-only or read + write, and mail off, draft or send; plus read-only consent per client |
+| Clients | Claude's own apps | Not assessed here | Not assessed here | Any MCP client with OAuth or a bearer token; only the Claude desktop app verified so far |
 | Shared Drive items | Silent empty results in an open issue | The hosted Drive connector omits the same flags, per the same issue | Not assessed here | Supported; unreachable ones return an explicit error |
 | Gmail | Drafts, send, reply and labels are documented; an open issue reports the label and archive tools not working for some users | Draft only, no send | Send supported; a recipient allowlist is an open proposal | Per account: off, draft or send; draft is the default; optional recipient allowlist |
 | Delete | Not assessed here | Not assessed here | Not assessed here | Trash only; no permanent delete tool exists |
@@ -136,12 +158,13 @@ quickly; please open an issue if a row is out of date.
 | Hosting | Anthropic | Google | Local or self-hosted | Self-hosted (Vercel) |
 
 If you need Docs editing, Sheets formulas or Calendar, use google_workspace_mcp, and consider running both. If you
-have one Google account and just want to chat with your files, the built-in connector is the least work. Crossdrive is
-for people who have several accounts and want an AI to organise across them safely.
+want Claude to read and draft in one Google account, the built-in connectors are the least work, and if the reported
+multi-account rollout reaches you, the same may soon be true for a few accounts. Crossdrive is for people who want per-account rules
+enforced on a server they run, operations between accounts, or a connection that is not tied to one AI app.
 
 ## Features
 
-**Several accounts, one URL.** Label each account yourself (`^[a-z][a-z0-9-]{0,23}$`) and connect as many as you like.
+**Every account under a label.** Label each account yourself (`^[a-z][a-z0-9-]{0,23}$`) and connect as many as you like.
 Paths are `label:/path` for My Drive, `label:~shared/Folder/...` for folders shared with the account, and
 `label:drive/<Shared Drive name>/...` for Shared Drives. Every result carries `owner`, `shared` and `canEdit`; `shared`
 means "owned by someone else and reached through sharing", not "this file has collaborators". Unknown arguments are

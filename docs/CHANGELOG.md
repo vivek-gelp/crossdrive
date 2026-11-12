@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Docs: repositioned the README, landing page and launch texts. The old headline ("Claude's Drive connector sees one
+  Google account. Crossdrive sees all of them") is gone, because as of mid-November 2026 there are user reports
+  (unconfirmed by Anthropic's documentation) that the built-in Gmail and Drive connectors are gaining several accounts.
+  Crossdrive is now described by what holds either way: every account under a label, rules per account enforced on the
+  server, operations between accounts, and no tie to one AI vendor. A "Do you need this?" section says when the
+  built-in connector is the simpler choice, and the comparison table is re-dated with unknowns marked as not known.
 - The logo is now served as `/favicon.ico` (16-256 px), PNG and apple-touch icons with `<link>` tags and a web manifest, as MCP `serverInfo.icons` (with `title`, `description` and `websiteUrl`), and the OAuth metadata links the privacy policy and terms.
 
 ## 1.0.1 (2026-11-12)

@@ -1,13 +1,13 @@
 # X thread (6 posts)
 
-1/ I have five Google accounts across several companies, and Claude's Drive connector sees one. I built Crossdrive to fix that for myself: one MCP URL for all of them, open source, self-hosted. I am sharing it in case it helps you too. https://github.com/vivek-gelp/crossdrive
+1/ I have five Google accounts. I wanted an AI to work across them under rules it cannot talk its way past: this one read-only, that one drafts but never sends. So I built Crossdrive, open source and self-hosted, and I am sharing it in case it helps. https://github.com/vivek-gelp/crossdrive
 
-2/ You label each account and address files as work:/Projects or personal:~shared/. Search covers every account and says which ones failed instead of quietly returning less. Folder trees copy between accounts with a resume cursor.
+2/ In fairness: there are user reports that Claude's built-in Gmail and Drive connectors are gaining several accounts. I could not confirm it from Anthropic's docs. If you have it and only need to read and draft, use it; no setup.
 
-3/ Safety is in code, not the prompt. Trash is the only delete. Mail is draft-only by default. Any account can be read-only, and a read-only account is never modified, even as a copy source. Writes are logged, never contents.
+3/ Crossdrive is for more than that. Every account sits under a label (work:/Projects), so nothing happens in "whichever account". Per account, on the server: read-only, mail off / draft / send. Trash is the only delete; dry run, undo, audit log; unknown arguments refused.
 
-4/ I tested it live over four rounds on two Gmail accounts and one Workspace account before sharing. It broke: the consent screen could not be approved in Chrome, and a read-only copy source got a temporary writer grant. Both are fixed in 1.0.1.
+4/ Between accounts: copy and move files and folder trees, find duplicates, and one search that names any account that failed. It is plain MCP, and your tokens stay in your own Vercel storage.
 
-5/ Not yet tested live: OneDrive and Dropbox (beta), the Claude and ChatGPT apps themselves (I used a scripted OAuth client), and disconnect/reconnect. Drive and Gmail only; you create your own Google Cloud OAuth client.
+5/ I tested it live over four rounds on two Gmail accounts and one Workspace account. It broke, and 1.0.1 fixes what broke. The Claude desktop app is the only client verified so far. OneDrive and Dropbox are beta, untested live. Drive and Gmail only.
 
-6/ MIT licence. Thank you to everyone who documented this gap publicly, and to anyone who tries it. If setup loses you, tell me where and I will help; critique of the threat model is welcome. If it is not right for you, the README lists other servers. https://vivek-gelp.github.io/crossdrive/
+6/ MIT licence. Thank you to anyone who tries it. If setup loses you, tell me where and I will help; critique of the threat model is welcome. https://vivek-gelp.github.io/crossdrive/

@@ -2,9 +2,11 @@
 
 ## Description (under 120 characters)
 
-Self-hosted MCP server: one URL for several Google Drive and Gmail accounts. Trash-only delete, audit log, read-only mode.
+Self-hosted MCP server for Google Drive and Gmail: labelled accounts, rules per account, copy and search between them.
 
-(119 characters)
+(118 characters. Suggested on 13 November 2026 to replace the earlier "one URL for several Google Drive and Gmail
+accounts" wording; the live setting has not been changed. Change it yourself under Settings, General, or with
+`gh repo edit vivek-gelp/crossdrive --description "..."`.)
 
 ## Website
 

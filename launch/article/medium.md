@@ -9,8 +9,8 @@ Use Medium's importer, not copy and paste, so the canonical link is kept:
   4. In the draft, check every link and the section headings came through; fix any list that was flattened.
 
 Fields to set before publishing (Publish, then the story settings panel):
-  Title:        Using several Google accounts with Claude: why it is hard, and four ways to do it
-  Subtitle:     Why connectors see one account, four honest options, and what to insist on from any tool
+  Title:        Several Google accounts with an AI assistant: the built-in options, and when you still need more
+  Subtitle:     The built-in connectors, a reported change, four honest options, and what to insist on
   Topics/tags:  Claude, Google Drive, Model Context Protocol, Open Source, Productivity   (Medium allows 5)
   Cover image:  https://vivek-gelp.github.io/crossdrive/brand/social-card.png
                 (download it and drag it in above the title if the importer did not pick it up)

@@ -7,6 +7,16 @@ Alternates:
 2. Many accounts, one connector, rules in code.
 3. Your clouds, connected on your terms.
 
+Sub-line: A guarded file-and-mail layer you host yourself. Every account sits under its own label, the server enforces
+the rules for each one, and files can be copied, moved and searched between accounts.
+
+Positioning (13 November 2026): Crossdrive is not pitched as "the way to get several Google accounts into Claude". Do
+not claim what Claude's built-in connectors can or cannot do beyond what is dated and sourced; there are unconfirmed
+user reports of a multi-account rollout. Lead with what is true either way: explicit labels, rules per account enforced
+on the server, operations between accounts, and independence from one AI vendor. Always say that only the Claude
+desktop app has been verified as a client and that OneDrive and Dropbox are beta. When the built-in connector is the
+better choice for a reader, say so.
+
 Voice: calm, exact, engineer to engineer. Say what the code does. No hype words, no emoji, no user counts or testimonials.
 
 ## Colours

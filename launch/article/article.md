@@ -1,24 +1,35 @@
 <!--
 Canonical article. Published at:
 https://vivek-gelp.github.io/crossdrive/blog/several-google-accounts-with-claude.html
-Published: 2026-11-12. Author: vivek-gelp.
+Published: 2026-11-12. Updated: 2026-11-13. Author: vivek-gelp.
 The HTML page on gh-pages is the canonical copy; keep the two in step if either changes.
-Facts about the problem were checked as of November 2026; recheck the reaction counts before reposting later.
+Facts about the problem were checked as of November 2026; recheck the reaction counts and the state of the reported
+built-in multi-account rollout before reposting later. If the rollout is confirmed by Anthropic, revise the update box
+and option 1 again.
 -->
 
-# Using several Google accounts with Claude: why it is hard, and four ways to do it
+# Several Google accounts with an AI assistant: the built-in options, and when you still need more
+
+> **Updated 13 November 2026.** When I first published this on 12 November, its premise was that Claude's built-in
+> connectors see one Google account each. Since then there are user reports (one Reddit thread, with a settings
+> screenshot) that the built-in Gmail and Drive connectors are gaining support for several accounts in a gradual
+> rollout, with per-tool approval settings. I could not confirm this from Anthropic's documentation, which on 12
+> November still described one connected account, and I have not been able to test it myself. If you have it, and you
+> only need to read and draft across a few Google accounts inside Claude, use it: it needs no setup. I have revised
+> option 1 below and narrowed what I say Crossdrive is for.
 
 I have five Google accounts across several companies. When I started asking Claude to help with my files, I found it
 could see one of them at a time. This is what I learned trying to fix that, written for anyone in the same
 position, whether or not you ever use the tool I ended up building.
 
-## Why it is hard
+## Why it has been hard
 
-Three facts, all checked as of November 2026.
+Three facts, checked as of 12 November 2026.
 
-**The connectors are one account each.** The most-reacted open request on Claude's connector tracker asks to attach two
-connectors with the same URL for different Google accounts. It has 44 reactions and 24 comments, with no staff reply
-since April 2026 ([anthropics/claude-ai-mcp #178](https://github.com/anthropics/claude-ai-mcp/issues/178)).
+**The connectors were documented as one account each.** The most-reacted open request on Claude's connector tracker
+asks to attach two connectors with the same URL for different Google accounts. It had 44 reactions and 24 comments,
+with no staff reply since April 2026 ([anthropics/claude-ai-mcp #178](https://github.com/anthropics/claude-ai-mcp/issues/178)).
+That request is about custom connectors, and it is still open; the reported change above is about the built-in ones.
 
 **Failures are often silent.** An open issue reports that the Drive connector leaves out the flags Google needs for
 Shared Drives, so a search there comes back empty instead of failing. It has 22 thumbs-up and more than 20 reports. One
@@ -29,19 +40,25 @@ reporter's main request was a clear error, because an empty answer leads to wron
 your organisation, such as a personal Google account or a user in another organisation
 ([Google Workspace Admin Help](https://support.google.com/a/answer/1247799?hl=en)).
 
-So "several accounts" is not a missing button. It is a gap between one-identity connectors and an identity model that
-keeps accounts apart by design.
+So "several accounts" has never been just a missing button. Even when a connector can hold several accounts, there are
+further questions: which account a request runs in, which accounts may change or send anything, and whether anything
+can move between them.
 
 ## Four ways to do it
 
-### 1. One connector, and switch accounts by hand
+### 1. The built-in connector
 
-Disconnect the connector and reconnect it as the other account when you need it. It costs nothing, needs no setup, and
-someone else hosts and maintains it.
+If the reported multi-account support has reached you, connect each Google account to the built-in Gmail or Drive
+connector and you are done. It costs nothing, needs no setup, and someone else hosts and maintains it. Users who have it
+suggest starting read-only and being careful about which account mail is sent from, which seems wise with any tool.
 
-This is the right choice if you have one main account and only occasionally need another, or if you mostly read. What
-you give up: no search across accounts, no copying between them, and you have to remember which account is connected.
-The connector will not tell the model it looked in the wrong place.
+If it has not reached you, the older way still works: disconnect the connector and reconnect it as the other account
+when you need it.
+
+This is the right choice if you mostly read and draft inside Claude. What I do not know, because I have not been able to
+test it: whether one request can search across accounts, whether files can be copied or moved between accounts, and
+whether approval settings can differ per account. With the reconnect method you give up all of these, and you have to
+remember which account is connected.
 
 ### 2. Share folders into one "hub" account
 
@@ -74,11 +91,13 @@ connectors allow one connector per URL.
 
 ### 4. Crossdrive
 
-This is what I built. [Crossdrive](https://github.com/vivek-gelp/crossdrive) is a self-hosted remote MCP server that
-gives an AI client one URL onto several Google Drive and Gmail accounts. Each account gets a label you choose, so a
-path reads `work:/Projects/2026`. `find` searches every account at once and names any account that failed. `copy`
-copies folder trees between accounts, resumably. Trash is the only delete, mail is draft-only by
-default, any account can be read-only, and every write is audited.
+This is what I built. [Crossdrive](https://github.com/vivek-gelp/crossdrive) is a guarded file-and-mail layer you host
+yourself, as a remote MCP server. Each account gets a label you choose, so a request always names its account, as in
+`work:/Projects/2026`. The rules are enforced by the server, per account: read-only or read + write, and mail off, draft
+or send. Trash is the only delete, writes can be dry-run and undone, every write is audited, and unknown arguments are
+refused. Between accounts, `copy` copies folder trees resumably, `transfer` moves files and trashes the source only
+after verifying the copy, `duplicates` finds the same file in several accounts, and `find` searches every account at
+once and names any account that failed. It is plain MCP, and your tokens stay in your own storage.
 
 The real costs:
 
@@ -92,8 +111,9 @@ The real costs:
 - **Limited client testing.** Live tests used a scripted OAuth client in Chrome plus one check with the Claude desktop
   app. Other clients are untested.
 
-It is the right choice if you have several accounts, want one conversation to work across them, and are comfortable
-running a small deployment.
+It is the right choice if you want rules per account that the server enforces, operations between accounts, or the same
+accounts from more than one AI client, and you are comfortable running a small deployment. If you only want to read
+and draft inside Claude, option 1 is less work.
 
 ## What to insist on, whichever you choose
 
@@ -111,7 +131,8 @@ A rule written in a prompt can be lost. A rule written in code cannot. So, from 
   ([Google](https://support.google.com/cloud/answer/13463817?hl=en)).
 - **Read-only where possible**, per account and enforced by the server. It also limits what an instruction hidden in a
   document can do.
-- **Drafts, not sends.** Mail the model reads can carry hidden instructions; a draft waits for you
+- **Drafts, not sends,** and a clear answer to "which account will this be sent from". Mail the model reads can carry
+  hidden instructions; a draft waits for you
   ([the "lethal trifecta"](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/)).
 - **A log you can read**: what changed, in which account, when.
 - **Errors that say which account failed.** A silent empty result is how wrong conclusions start.
@@ -141,8 +162,9 @@ have not tested as plainly as what you have.
 ## Thank you
 
 Thank you to the people who documented this problem in public issue trackers. Your write-ups showed me I was not alone,
-and they shaped every safety rule above. Thank you to the maintainers of the tools Crossdrive builds on: the Model
-Context Protocol TypeScript SDK, mcp-handler, Next.js, jose, zod and the PDF and Office parsers. And thank you to the
+and they shaped every safety rule above. If the built-in connectors now handle several accounts, I am glad, and I hope
+your requests helped. Thank you to the maintainers of the tools Crossdrive builds on: the Model Context Protocol
+TypeScript SDK, mcp-handler, Next.js, jose, zod and the PDF and Office parsers. And thank you to the
 google_workspace_mcp maintainer, whose explanations of the multi-account limits taught me a great deal.
 
 If you try Crossdrive and get stuck, [open an issue](https://github.com/vivek-gelp/crossdrive/issues) and I will help.

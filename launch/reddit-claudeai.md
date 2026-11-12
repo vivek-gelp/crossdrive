@@ -5,28 +5,37 @@ as yourself, disclose that you are the author, and reply to every comment in the
 
 ## Title
 
-The built-in Drive connector sees one Google account, so I made an open-source MCP server for several
+I made an open-source MCP server that puts per-account rules on several Google Drive and Gmail accounts
 
 ## Body
 
-The built-in Drive connector sees one Google account. I have five, across several companies, so I built Crossdrive
-(1.0.1) to solve my own problem, and I am sharing it in case it helps you.
+I have five Google accounts across several companies, and I wanted Claude to work across them with rules I could rely
+on: this account read-only, that one allowed to draft but never send. So I built Crossdrive (1.0.1) for myself, and I
+am sharing it in case it helps you.
 
-- One URL onto several Google Drive and Gmail accounts, each under a label you choose (`work:/Contracts`).
-- Search all accounts at once, copy files and folder trees between them.
-- Gmail: search, read, label, drafts. Sending is off by default.
-- Trash is the only delete. Every write is logged; moves, renames and trashes can be undone.
+First, in fairness: there is a report here that the built-in Gmail and Drive connectors are gaining support for several
+accounts. I have not been able to confirm that from Anthropic's documentation or test it. If you have it and only need
+Claude to read and draft across a few accounts, use it; it needs no setup.
 
-I tested it over four live rounds (two consumer Gmail accounts, one read-only Workspace account) with a scripted OAuth
-client. That found real bugs, including a consent screen that could not be approved in Chrome and a read-only
-account getting a temporary writer grant as a copy source. Both are fixed. I have not yet run it from the Claude apps or
-Claude Code; it should work as a custom connector; if not, please tell me.
+Crossdrive is for when you want more than that:
 
-Caveats: you deploy it yourself on Vercel with your own Google OAuth client, which is real setup work. Drive and
-Gmail only; OneDrive and Dropbox are beta and untested live. If it is not right for you, the README lists other servers.
+- Every account under a label you choose (`work:/Contracts`), so nothing happens "in whichever account".
+- Rules per account, enforced on the server: read-only, mail off / draft / send, trash-only delete, dry run, undo, an
+  audit log.
+- Work between accounts: copy and move files and folder trees, find duplicates, one search that names any account that
+  failed.
+- Your own hosting: tokens stay in your Vercel storage, and it is plain MCP rather than tied to one app.
 
-If you get stuck, open an issue or discussion and I will help. Thank you to those who reported this gap publicly, and
-to anyone who tries it.
+I tested it over four live rounds (two consumer Gmail accounts, one read-only Workspace account). That found real bugs,
+including a consent screen that could not be approved in Chrome and a read-only account getting a temporary writer
+grant as a copy source. Both are fixed. I have since connected it from the Claude desktop app against a live instance.
+I have not yet tried claude.ai on the web, the mobile apps, ChatGPT or Claude Code; if it does not work there, please
+tell me.
+
+Caveats: you deploy it yourself on Vercel with your own Google OAuth client, which is real setup work. Drive and Gmail
+only; OneDrive and Dropbox are beta and untested live.
+
+If you get stuck, open an issue or discussion and I will help. Thank you to anyone who tries it.
 
 https://github.com/vivek-gelp/crossdrive
 

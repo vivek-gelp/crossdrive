@@ -13,9 +13,9 @@ Fields:
 Paste the text BELOW the "-----8<-----" line. Stay in the thread for the first few hours and answer questions.
 -->
 -----8<-----
-I have five Google accounts across several companies. When I started using Claude for file work, it could see one of them at a time. Others had the same problem: the most-reacted open request on Claude's connector tracker, as of November 2026, asks for exactly this, with 44 reactions and no staff reply since April.
+I have five Google accounts across several companies. When I started using Claude for file work, it could see one of them at a time, and I wanted more than access: I wanted to say which accounts could change anything, which could send mail, and to move files between them safely. (As of 13 November 2026 there are user reports, not yet confirmed by Anthropic, that Claude's built-in Gmail and Drive connectors are gaining several accounts. If you have that and only need to read and draft, use it.)
 
-So I built a small self-hosted server for myself. One URL, several Google Drive and Gmail accounts, each under a label I choose, so a path reads `work:/Projects/2026`. Search runs across every account and names any that failed. Folders copy between accounts. The safety rules live in code, not in a prompt: trash is the only delete, mail is draft-only by default, any account can be read-only, and every write is logged.
+So I built a small self-hosted server for myself. Every Google Drive and Gmail account sits under a label I choose, so a path reads `work:/Projects/2026` and nothing happens in whichever account is connected. The rules live on the server, not in a prompt, and are set per account: read-only or not, mail off, draft or send. Trash is the only delete and every write is logged. Search runs across every account and names any that failed, and folders copy and move between accounts.
 
 It worked for me. Whether it would work for anyone else was a different question.
 
@@ -37,8 +37,8 @@ None of these bugs would have shown up in a demo. Each one came from an assumpti
 
 **What it costs a user**
 
-Some effort: your own Google Cloud OAuth client, a Vercel deploy, and Google's "unverified app" notice for personal accounts. It covers Drive and Gmail only. For one account, the built-in connector is less work.
+Some effort: your own Google Cloud OAuth client, a Vercel deploy, and Google's "unverified app" notice for personal accounts. It covers Drive and Gmail only, and only the Claude desktop app has been verified as a client. If you only need to read and draft inside Claude, the built-in connector is less work.
 
-I wrote up the four ways to handle several Google accounts with Claude, including the ones that need no new software, here: https://vivek-gelp.github.io/crossdrive/blog/several-google-accounts-with-claude.html
+I wrote up four ways to handle several Google accounts with an AI assistant, including the built-in connector and other options that need no new software, here: https://vivek-gelp.github.io/crossdrive/blog/several-google-accounts-with-claude.html
 
 The code is MIT licensed (github.com/vivek-gelp/crossdrive). If you try it and get stuck, open an issue and I will help.
