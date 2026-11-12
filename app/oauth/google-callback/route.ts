@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAllowedEmail, jwtEnv } from "@/lib/config";
+import { baseUrl, isAllowedEmail, jwtEnv } from "@/lib/config";
 import { exchangeCode, loginRedirectUri, verifyGoogleIdToken } from "@/lib/google";
 import { adminCookieHeader, htmlError } from "@/lib/http";
 import { verifyState } from "@/lib/jwt";
@@ -63,8 +63,10 @@ export async function GET(req: Request) {
       scope: state.scope ?? SCOPE_FULL,
       email,
     };
-    const token = await issuePendingConsent(pending);
-    return new NextResponse(renderConsentPage(pending, token), { status: 200, headers: CONSENT_HEADERS });
+    // The cookie half of the consent CSRF binding; Secure whenever this deployment is served over https.
+    const secure = [baseUrl(), url.origin].some((o) => o.startsWith("https:"));
+    const { token, cookie } = await issuePendingConsent(pending, { secure });
+    return new NextResponse(renderConsentPage(pending, token), { status: 200, headers: { ...CONSENT_HEADERS, "Set-Cookie": cookie } });
   }
   if (state.purpose === "admin") {
     const next = state.next && state.next.startsWith("/") ? state.next : "/connect";

@@ -11,7 +11,10 @@ function revokedText(r: DisconnectResult): string {
   return r.revoked === true ? "access revoked" : r.revoked === "shared" ? "grant kept for another label" : "revoke failed, removed anyway";
 }
 
-/** All mutating /connect actions: POST + admin session + CSRF token + Origin check. Redirects back with a notice. */
+/**
+ * All mutating /connect actions: POST + admin session + CSRF token bound to that session + Origin check (a foreign
+ * Origin is refused; `Origin: null` or none relies on the token). Redirects back with a notice.
+ */
 export async function POST(req: Request) {
   const url = new URL(req.url);
   const back = (key: "notice" | "error", msg: string) =>
@@ -22,6 +25,7 @@ export async function POST(req: Request) {
   const form = new URLSearchParams(await req.text());
   const csrfError = checkCsrf({
     origin: req.headers.get("origin"),
+    secFetchSite: req.headers.get("sec-fetch-site"),
     allowedOrigins: [baseUrl(), url.origin],
     sessionToken: cookieValue(req.headers.get("cookie"), ADMIN_COOKIE),
     formToken: form.get("csrf"),

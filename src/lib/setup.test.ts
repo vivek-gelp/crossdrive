@@ -10,10 +10,18 @@ describe("csrf", () => {
     expect(checkCsrf({ ...ok, formToken: csrfToken("sess", SECRET) })).toBeNull();
     expect(checkCsrf({ ...ok, origin: null, formToken: csrfToken("sess", SECRET) })).toBeNull();
   });
+  it("Origin: null (no-referrer pages, sandboxed frames) relies on the session-bound token", () => {
+    const t = csrfToken("sess", SECRET);
+    expect(checkCsrf({ ...ok, origin: "null", formToken: t })).toBeNull();
+    expect(checkCsrf({ ...ok, origin: "null", formToken: null })).toMatch(/token/);
+    expect(checkCsrf({ ...ok, origin: "null", sessionToken: undefined, formToken: t })).toMatch(/session/);
+    expect(checkCsrf({ ...ok, origin: "null", formToken: csrfToken("other-session", SECRET) })).toMatch(/token/);
+  });
   it("rejects foreign origins, missing sessions and wrong tokens", () => {
     const t = csrfToken("sess", SECRET);
     expect(checkCsrf({ ...ok, origin: "https://evil.example", formToken: t })).toMatch(/Origin/);
-    expect(checkCsrf({ ...ok, origin: "null", formToken: t })).toMatch(/Origin/);
+    expect(checkCsrf({ ...ok, origin: null, secFetchSite: "cross-site", formToken: t })).toMatch(/Origin/);
+    expect(checkCsrf({ ...ok, secFetchSite: "same-origin", formToken: t })).toBeNull();
     expect(checkCsrf({ ...ok, sessionToken: undefined, formToken: t })).toMatch(/session/);
     expect(checkCsrf({ ...ok, formToken: csrfToken("other-session", SECRET) })).toMatch(/token/);
     expect(checkCsrf({ ...ok, formToken: null })).toMatch(/token/);

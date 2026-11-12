@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { SignJWT, jwtVerify, type JWTPayload } from "jose";
 
 /**
@@ -27,6 +27,9 @@ interface IssueOpts {
   now?: number;
 }
 
+/** Kinds that carry a random `jti`, so a single-use marker can be keyed by it (see once.ts). */
+const WITH_JTI: ReadonlySet<TokenUse> = new Set<TokenUse>(["code", "consent"]);
+
 function keyOf(env: JwtEnv): Uint8Array {
   const k = Buffer.from(env.secret, "base64");
   if (k.length < 32) throw new Error("CROSSDRIVE_JWT_SECRET must decode to at least 32 bytes");
@@ -35,7 +38,9 @@ function keyOf(env: JwtEnv): Uint8Array {
 
 async function issue(env: JwtEnv, use: TokenUse, claims: Record<string, unknown>, opts?: IssueOpts): Promise<string> {
   const now = opts?.now ?? Math.floor(Date.now() / 1000);
-  return new SignJWT({ ...claims, use })
+  const jwt = new SignJWT({ ...claims, use });
+  if (WITH_JTI.has(use)) jwt.setJti(randomBytes(16).toString("base64url"));
+  return jwt
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setIssuer(env.issuer)
     .setIssuedAt(now)
@@ -148,9 +153,17 @@ export interface PendingConsent {
   scope: string;
   email: string;
 }
-export type ConsentClaims = JWTPayload & PendingConsent;
+/**
+ * Browser binding of a consent token (since 1.0.1): `cn` names the cookie `crossdrive_consent_<cn>` set when the page
+ * was shown, `csrf` is the base64url SHA-256 of that cookie's random value. Approval needs both halves.
+ */
+export interface ConsentBinding {
+  cn?: string;
+  csrf?: string;
+}
+export type ConsentClaims = JWTPayload & PendingConsent & ConsentBinding;
 
-export function issueConsent(env: JwtEnv, c: PendingConsent, opts?: IssueOpts) {
+export function issueConsent(env: JwtEnv, c: PendingConsent & ConsentBinding, opts?: IssueOpts) {
   return issue(env, "consent", { ...c }, opts);
 }
 

@@ -13,6 +13,7 @@ import {
   verifyRefreshToken,
   type ClientClaims,
 } from "./jwt";
+import { onceKey, useOnce } from "./once";
 
 /**
  * Stateless OAuth 2.1 authorization server pieces (RFC 8414 / 9728 / 7591 /
@@ -228,6 +229,8 @@ export async function handleTokenRequest(form: URLSearchParams): Promise<TokenRe
     if (client_id && claims.client_id !== client_id) throw new OAuthError("invalid_grant", "client_id mismatch");
     if (redirect_uri && claims.redirect_uri !== redirect_uri) throw new OAuthError("invalid_grant", "redirect_uri mismatch");
     if (!verifyPkce(verifier, claims.code_challenge)) throw new OAuthError("invalid_grant", "PKCE verification failed");
+    // Single use (RFC 6749 4.1.2), checked after PKCE so a party without the verifier cannot burn the code.
+    if (!(await useOnce("code", onceKey(code, claims.jti)))) throw new OAuthError("invalid_grant", "authorization code was already used");
     return mint(claims.email, claims.client_id, claims.scope ?? SCOPE_FULL);
   }
   if (grant === "refresh_token") {
@@ -240,6 +243,9 @@ export async function handleTokenRequest(form: URLSearchParams): Promise<TokenRe
       throw new OAuthError("invalid_grant", "refresh token is invalid or expired");
     }
     if (client_id && claims.client_id !== client_id) throw new OAuthError("invalid_grant", "client_id mismatch");
+    // Refresh tokens are not rotated or single-use: they stay stateless JWTs so that several processes of one client
+    // can refresh concurrently with the same token. Rotation with reuse detection would make the losers of such a race
+    // fail (and, done properly, revoke the whole grant). See docs/security.md.
     return mint(claims.email, claims.client_id, claims.scope);
   }
   throw new OAuthError("unsupported_grant_type", "grant_type must be authorization_code or refresh_token");

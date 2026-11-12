@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 
 // Baseline browser hardening for every route. Routes that set a stricter policy themselves (the OAuth consent
-// page) keep theirs; these are the floor.
+// page) keep theirs; these are the floor. Never use `Referrer-Policy: no-referrer` on a page with a form: Chrome then
+// sends `Origin: null` on the POST. The consent page sends `strict-origin` and repeats it in a meta tag, so its
+// effective policy does not depend on which of the two Referrer-Policy headers survives.
 const SECURITY_HEADERS = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
