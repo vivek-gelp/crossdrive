@@ -16,7 +16,7 @@ function mockFetch(files: DriveFile[] = []) {
 
 describe("FILE_FIELDS", () => {
   it("requests owners, capabilities, shared and driveId", () => {
-    for (const f of ["owners(emailAddress)", "capabilities(canEdit,canAddChildren,canShare)", "shared", "driveId", "md5Checksum"]) {
+    for (const f of ["owners(emailAddress,me)", "ownedByMe", "capabilities(canEdit,canAddChildren,canShare)", "shared", "driveId", "md5Checksum"]) {
       expect(FILE_FIELDS).toContain(f);
     }
   });

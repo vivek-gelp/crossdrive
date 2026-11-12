@@ -87,7 +87,7 @@ describe("Shared Drives in the tools", () => {
     const root = await call(tools, "list", { account: "work", path: "work:drive/Finance" });
     expect(root.isError, root.text).toBe(false);
     expect(root.json).toMatchObject({ folderId: "d1", path: "work:drive/Finance" });
-    expect((root.json!.files as Record<string, unknown>[])[0]).toMatchObject({ name: "2026", path: "work:drive/Finance/2026", owner: "me", canEdit: true });
+    expect((root.json!.files as Record<string, unknown>[])[0]).toMatchObject({ name: "2026", path: "work:drive/Finance/2026", owner: 'shared drive "Finance"', shared: false, canEdit: true });
 
     const sub = await call(tools, "list", { account: "work", path: "work:drive/finance/2026" });
     expect((sub.json!.files as Record<string, unknown>[])[0]).toMatchObject({ name: "Invoice.pdf", path: "work:drive/Finance/2026/Invoice.pdf" });

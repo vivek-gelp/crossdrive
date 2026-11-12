@@ -138,6 +138,9 @@ ${fullOption}
 </main></body></html>`;
 }
 
+/** Shown (HTTP 409, no redirect) when the browser returns to a Google sign-in that already produced a consent screen, e.g. Back after answering it. */
+export const ALREADY_ANSWERED = "This request was already answered. Return to your AI client and start the connection again.";
+
 /** Thrown when the browser binding does not match: answered with 403. */
 export class ConsentCsrfError extends Error {}
 

@@ -41,6 +41,9 @@ Fixes:
 - The consent screen is styled (the page's security policy had blocked the site stylesheet).
 - `/connect` no longer tells you to open `/connect` when no account is connected.
 - `read` on an xlsx lists the workbook's sheet names.
+- `shared` (and every result's `owner`/`shared`) no longer reports an item as yours when Drive omits `ownedByMe`: only `ownedByMe: true` or an owner entry matching the account counts as "me", Shared Drive items show `shared drive "<name>"` as owner, and anything from "Shared with me" is always `shared: true`.
+- `transfer` with `dryRun` now refuses a read-only destination (or a read-only source with `move: true`) exactly like the real run, instead of reporting no issues.
+- Pressing Back after answering the consent screen shows "This request was already answered" (HTTP 409) instead of sending the client a `server_error`.
 - Docs: the audit log stores mail recipients and subjects; tools that take `account` need it even with a labelled path;
   `duplicates` with `acrossAccounts` ignores `path`; connecting several Google accounts needs each signed in to the
   browser.

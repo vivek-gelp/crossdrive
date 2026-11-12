@@ -11,7 +11,8 @@ import { getStore } from "./store";
  * a marker lives only in the instance that wrote it, so the guarantee holds per instance: best effort, never an error.
  */
 
-export type OnceKind = "code" | "consent";
+/** `callback`: a Google sign-in return (keyed by Google's code), so Back on the consent screen is recognised. */
+export type OnceKind = "code" | "consent" | "callback";
 
 /** Key for a token: its `jti` when it has a usable one, else a hash of the whole token (tokens issued before 1.0.1). */
 export function onceKey(token: string, jti: unknown): string {

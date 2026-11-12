@@ -346,10 +346,10 @@ export async function transfer(a: TransferArgs, opts: TransferOpts): Promise<Tra
       throw new Error(`This cursor belongs to a different transfer (${cursor.from} -> ${cursor.to}, move=${cursor.move}); pass the same from, to and move`);
     }
   }
-  if (!a.dryRun) {
-    await assertWriteMode(dstAccount);
-    if (move) await assertWriteMode(srcAccount);
-  }
+  // The same gate for a dry run as for the real run, so a preview never promises a transfer that will be refused.
+  // move=true trashes the source, which is a write on the source account too.
+  await assertWriteMode(dstAccount);
+  if (move) await assertWriteMode(srcAccount);
 
   if (src.kind === "google" && dst.kind === "google") {
     return googleToGoogle(a, { srcAccount, dstAccount, src, dst, move, maxFiles, cursor: cursor as GoogleCursor | undefined }, opts);

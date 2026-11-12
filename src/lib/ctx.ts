@@ -59,11 +59,11 @@ export interface FileResult {
   /** `label:/A/B/name` (My Drive), `label:~shared/Top/Sub/name` ("Shared with me") or `label:drive/<Drive>/Sub/name` (Shared Drive). */
   path: string;
   /**
-   * Owner email, or "me" when the connected account owns it (Shared Drive items count as "me"), or "unknown" when
-   * Drive withholds the owner of an item shared with the account.
+   * Owner email; "me" when the connected account owns it; `shared drive "<name>"` for Shared Drive items; "unknown"
+   * when Drive withholds the owner of an item shared with the account.
    */
   owner: string;
-  /** True when someone else owns the item (it was shared with this account). */
+  /** True when someone else (a person, or a Shared Drive the account is not a member of) owns the item. */
   shared: boolean;
   /** From Drive `capabilities.canEdit`; false means view-only / commenter access. */
   canEdit: boolean;
@@ -77,21 +77,42 @@ export function ownerEmail(f: DriveFile): string | undefined {
   return f.owners?.[0]?.emailAddress?.toLowerCase();
 }
 
+/** Owner label used for items that belong to a Shared Drive rather than a person. */
+export function sharedDriveOwner(path: string, label: string): string {
+  const prefix = `${label}:drive/`;
+  const name = path.startsWith(prefix) ? path.slice(prefix.length).split("/")[0] : "";
+  return name ? `shared drive "${name}"` : "shared drive";
+}
+
+/**
+ * Who owns `f`, as seen by the account `ownEmail`. Only positive evidence makes an item "me": `ownedByMe === true`,
+ * or an owners[] entry flagged `me` / carrying the account's email. Drive omits `ownedByMe` for Shared Drive items and
+ * can omit both it and `owners` for items shared with the account, so a missing field never means "mine".
+ * Shared Drive items are owned by the drive; they count as shared unless the path shows the account is a member.
+ * `sharedWithMe` (the item came from a `sharedWithMe = true` query) forces `shared: true`.
+ */
+export function ownership(label: string, ownEmail: string, f: DriveFile, path: string, opts: { sharedWithMe?: boolean } = {}): { owner: string; shared: boolean } {
+  const own = ownEmail.toLowerCase();
+  const owners = f.owners ?? [];
+  const mine = f.ownedByMe === true || (f.ownedByMe !== false && owners.some((o) => o.me === true || o.emailAddress?.toLowerCase() === own));
+  if (mine && !opts.sharedWithMe) return { owner: "me", shared: false };
+  const other = owners.find((o) => o.emailAddress && o.emailAddress.toLowerCase() !== own)?.emailAddress;
+  if (other) return { owner: other, shared: true };
+  if (f.driveId) return { owner: sharedDriveOwner(path, label), shared: opts.sharedWithMe === true || !path.startsWith(`${label}:drive/`) };
+  return { owner: mine ? "me" : "unknown", shared: true };
+}
+
 /** Pure mapping of a Drive file to the result shape every tool returns. */
-export function fileResult(label: string, ownEmail: string, f: DriveFile, path: string): FileResult {
-  const owner = ownerEmail(f);
-  // No owner at all: Shared Drive items (they count as "me"), or an item whose owner Drive hides from this account.
-  // ownedByMe=false tells the second case apart; treating it as "me" reported foreign items as the account's own.
-  const hidden = !owner && !f.driveId && f.ownedByMe === false;
-  const mine = !hidden && (!owner || owner === ownEmail.toLowerCase());
+export function fileResult(label: string, ownEmail: string, f: DriveFile, path: string, opts: { sharedWithMe?: boolean } = {}): FileResult {
+  const { owner, shared } = ownership(label, ownEmail, f, path, opts);
   return {
     account: label,
     id: f.id,
     name: f.name,
     mimeType: f.mimeType,
     path,
-    owner: hidden ? "unknown" : mine ? "me" : (f.owners?.[0]?.emailAddress ?? "me"),
-    shared: !mine,
+    owner,
+    shared,
     canEdit: f.capabilities?.canEdit ?? true,
     modifiedTime: f.modifiedTime,
     size: f.size ? Number(f.size) : undefined,
@@ -119,11 +140,11 @@ export function ownerLabel(c: Ctx, f: DriveFile): string {
   return fileResult(c.account.label, c.ownEmail, f, "").owner;
 }
 
-export async function toResult(c: Ctx, f: DriveFile, pathHint?: string): Promise<FileResult> {
+export async function toResult(c: Ctx, f: DriveFile, pathHint?: string, opts: { sharedWithMe?: boolean } = {}): Promise<FileResult> {
   const path = pathHint
     ? `${pathHint.replace(/\/$/, "")}/${f.name}`
     : await pathResolver.displayPath(c.account.label, c.drive, f.id, c.rootId, f);
-  return fileResult(c.account.label, c.ownEmail, f, path);
+  return fileResult(c.account.label, c.ownEmail, f, path, opts);
 }
 
 /** Resolve a `label:/a/b`, `label:~shared/Top/b` or `label:drive/<Drive>/b` path for account `c`; label in path must match. */

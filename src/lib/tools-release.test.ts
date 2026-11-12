@@ -129,6 +129,40 @@ describe("account mode read", () => {
     expect(writes(b.log)).toHaveLength(0);
   });
 
+  it("dry runs pass the same gate: copy, batch and transfer previews onto (or moving out of) a read-only account are refused", async () => {
+    const b = fakeDrive(SPECS, files());
+    setDriveFetch(b.fetchImpl);
+    const ro = "account personal is read-only; change it on /connect";
+    const refused: [string, Record<string, unknown>][] = [
+      ["copy", { fromAccount: "work", fileId: "notes", toAccount: "personal", toFolderId: "proot", allowNonStandardName: false, trashOriginal: false, dryRun: true, maxFiles: 10 }],
+      ["copy", { fromAccount: "work", fileId: "docs", toAccount: "personal", toFolderId: "proot", allowNonStandardName: false, trashOriginal: false, dryRun: true, maxFiles: 10 }],
+      ["copy", { fromAccount: "personal", fileId: "pfile", toAccount: "work", toFolderId: "wroot", allowNonStandardName: false, trashOriginal: true, dryRun: true, maxFiles: 10 }],
+      ["transfer", { from: "work:/Docs/notes.txt", to: "personal:/", move: false, dryRun: true, maxFiles: 10 }],
+      ["transfer", { from: "personal:/report copy.pdf", to: "work:/", move: true, dryRun: true, maxFiles: 10 }],
+    ];
+    for (const [tool, args] of refused) {
+      const r = await call(tools, tool, args);
+      expect(r.isError, `${tool}: ${r.text}`).toBe(true);
+      expect(r.text, tool).toBe(ro);
+    }
+    // Copying out of a read-only account without trashing the source only reads it: the preview is allowed.
+    const out = await call(tools, "transfer", { from: "personal:/report copy.pdf", to: "work:/", move: false, dryRun: true, maxFiles: 10 });
+    expect(out.isError, out.text).toBe(false);
+    const batch = await call(tools, "batch", {
+      operations: [
+        { op: "copy", fromAccount: "work", fileId: "notes", toAccount: "personal", toFolderId: "proot" },
+        { op: "mkdir", account: "personal", parentPath: "/", name: "X" },
+      ],
+      dryRun: true,
+      stopOnError: false,
+    });
+    expect((batch.json!.items as { status: string; message: string }[]).map((i) => [i.status, i.message])).toEqual([
+      ["error", ro],
+      ["error", ro],
+    ]);
+    expect(writes(b.log)).toHaveLength(0);
+  });
+
   it("still allows reads on a read-only account", async () => {
     setDriveFetch(fakeDrive(SPECS, files()).fetchImpl);
     const r = await call(tools, "list", { account: "personal", path: "/" });

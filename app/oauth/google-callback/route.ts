@@ -3,9 +3,10 @@ import { baseUrl, isAllowedEmail, jwtEnv } from "@/lib/config";
 import { exchangeCode, loginRedirectUri, verifyGoogleIdToken } from "@/lib/google";
 import { adminCookieHeader, htmlError } from "@/lib/http";
 import { verifyState } from "@/lib/jwt";
-import { CONSENT_HEADERS, issuePendingConsent, renderConsentPage, type PendingConsent } from "@/lib/consent";
+import { ALREADY_ANSWERED, CONSENT_HEADERS, issuePendingConsent, renderConsentPage, type PendingConsent } from "@/lib/consent";
 import { verifyClientId } from "@/lib/jwt";
 import { redirectWithParams, SCOPE_FULL } from "@/lib/oauth";
+import { onceKey, redeemOnce } from "@/lib/once";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,6 +37,11 @@ export async function GET(req: Request) {
   if (googleError) return fail(400, `Google sign-in failed: ${googleError}`);
   const code = url.searchParams.get("code");
   if (!code) return fail(400, "Missing code from Google");
+  // Google's code is single-use and each consent screen is answered once. A repeat of this URL (browser Back after
+  // the consent screen) gets a plain page, not a redirect: the client already received its answer.
+  if (state.purpose === "oauth" && !(await redeemOnce("callback", onceKey(code, undefined)))) {
+    return htmlError(409, ALREADY_ANSWERED);
+  }
 
   let email: string;
   try {

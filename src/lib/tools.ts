@@ -254,7 +254,7 @@ export function registerReadTools(rawServer: McpServer, opts: RegisterOpts = { f
     wrap(async (a) => {
       const c = await ctxFor(a.account);
       const page = await c.drive.listSharedWithMe({ query: a.query, foldersOnly: a.foldersOnly, pageToken: a.pageToken });
-      const files = await Promise.all(page.files.map((f) => toResult(c, f)));
+      const files = await Promise.all(page.files.map((f) => toResult(c, f, undefined, { sharedWithMe: true })));
       return { account: a.account, path: `${a.account}:${SHARED_PREFIX}`, files, nextPageToken: page.nextPageToken };
     }),
   );

@@ -14,8 +14,8 @@ describe("owner of items whose owner Drive withholds", () => {
     const r = fileResult("personal", own, { id: "x", name: "x.pdf", mimeType: "application/pdf", ownedByMe: false }, "personal:~shared/x.pdf");
     expect(r).toMatchObject({ owner: "unknown", shared: true });
   });
-  it("keeps Shared Drive items and own items as me", () => {
-    expect(fileResult("work", own, { id: "d", name: "d", mimeType: "x", driveId: "d1", ownedByMe: false }, "")).toMatchObject({ owner: "me", shared: false });
+  it("reports Shared Drive items as owned by the drive and own items as me", () => {
+    expect(fileResult("work", own, { id: "d", name: "d", mimeType: "x", driveId: "d1" }, "work:drive/Finance/d")).toMatchObject({ owner: 'shared drive "Finance"', shared: false });
     expect(fileResult("work", own, { id: "o", name: "o", mimeType: "x", ownedByMe: true }, "")).toMatchObject({ owner: "me", shared: false });
     expect(fileResult("work", own, { id: "o", name: "o", mimeType: "x", owners: [{ emailAddress: "Alex@Example.com" }] }, "")).toMatchObject({ owner: "me", shared: false });
     expect(fileResult("work", own, { id: "s", name: "s", mimeType: "x", owners: [{ emailAddress: "sam@example.org" }], ownedByMe: false }, "")).toMatchObject({

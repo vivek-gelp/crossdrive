@@ -28,9 +28,10 @@ describe("fileResult", () => {
     const r = fileResult("work", ME, f, "work:~shared/Northwind Phase I - All Details");
     expect(r).toMatchObject({ owner: "team@acme.example", shared: true, canEdit: false });
   });
-  it("treats missing owners as me and missing capabilities as editable", () => {
+  it("never treats missing ownership fields as me; missing capabilities count as editable", () => {
     const r = fileResult("work", ME, { id: "c", name: "x", mimeType: "text/plain" }, "work:/x");
-    expect(r).toMatchObject({ owner: "me", shared: false, canEdit: true });
+    expect(r).toMatchObject({ owner: "unknown", shared: true, canEdit: true });
+    expect(fileResult("work", ME, { id: "c", name: "x", mimeType: "text/plain", ownedByMe: true }, "work:/x")).toMatchObject({ owner: "me", shared: false });
   });
 });
 
