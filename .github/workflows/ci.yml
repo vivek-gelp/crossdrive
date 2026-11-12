@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      # Dummy values for the build only; tests set their own (vitest.setup.ts drops any CROSSDRIVE_ variable).
+      # Both secrets decode to 32 bytes of base64, as the server requires.
+      - run: pnpm build
+        env:
+          GOOGLE_CLIENT_ID: dummy-client-id
+          GOOGLE_CLIENT_SECRET: dummy-client-secret
+          CROSSDRIVE_JWT_SECRET: Y2ktZHVtbXktand0LXNlY3JldC1ub3QtZm9yLXByb2Q=
+          CROSSDRIVE_ENC_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          CROSSDRIVE_ALLOWED_EMAILS: ci@example.com
+          CROSSDRIVE_BASE_URL: http://localhost:3000
