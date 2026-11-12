@@ -6,18 +6,30 @@
  * code before any Google call, never only through tool annotations.
  */
 import { env } from "./config";
-import { accountMail, accountMode, type Account } from "./store";
+import { accountMail, accountMode, getAccount, type Account } from "./store";
 
 /** Structural on purpose: labels are free-form strings. */
 type AccountLike = { label: string } & Pick<Account, "mode" | "mail">;
 
 export class AccessError extends Error {}
 
-/** Throws unless the account may be written to. */
-export function assertAccountWritable(account: AccountLike): void {
-  if (accountMode(account) === "read") {
-    throw new AccessError(`account ${account.label} is read-only; change it on /connect`);
-  }
+/** The refusal every write tool gives for a read-only account, on every provider. */
+export function readOnlyMessage(label: string): string {
+  return `account ${label} is read-only; change it on /connect`;
+}
+
+/** Pure check on a record already in hand. Write paths use assertAccountWritable, which re-reads the record. */
+export function checkAccountWritable(account: AccountLike): void {
+  if (accountMode(account) === "read") throw new AccessError(readOnlyMessage(account.label));
+}
+
+/**
+ * Throws unless the account may be written to. The mode is read fresh from the store (one read per call), never
+ * from the per-instance account cache: serverless instances do not share memory, so a switch to read-only (or a
+ * disconnect) made on /connect must hold on every instance at once. Always `await` it.
+ */
+export async function assertAccountWritable(account: { label: string }): Promise<void> {
+  checkAccountWritable(await getAccount(account.label, { fresh: true }));
 }
 
 /**
@@ -26,11 +38,12 @@ export function assertAccountWritable(account: AccountLike): void {
  */
 export type MailNeed = "read" | "modify" | "draft" | "send";
 
+/** Pure check on a record already in hand; mailCtxFor passes the record it read fresh from the store. */
 export function assertMailAllowed(account: AccountLike, need: MailNeed): void {
   const mail = accountMail(account);
   if (mail === "off") throw new AccessError(`mail is turned off for account ${account.label}; change it on /connect`);
   if (need === "read") return;
-  assertAccountWritable(account);
+  checkAccountWritable(account);
   if (need === "send" && mail === "draft") {
     throw new AccessError(
       `account ${account.label} may only create drafts (mail mode "draft"): nothing was sent. Create a draft with mail_draft instead (for a reply pass replyToMessageId) and let the user send it from Gmail.`,

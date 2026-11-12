@@ -3,7 +3,7 @@
  * tools.ts) can import them without an import cycle through the Google
  * adapter (which itself imports ctx.ts).
  */
-import { accountMode, accountProvider, type Account } from "../store";
+import { accountMode, accountProvider, getAccount, type Account } from "../store";
 import type { ProviderKind } from "./types";
 
 export const PROVIDER_NAMES: Record<ProviderKind, string> = { google: "Google Drive", microsoft: "OneDrive", dropbox: "Dropbox" };
@@ -22,8 +22,13 @@ export function assertGoogleAccount(account: { label: string; provider?: Account
   );
 }
 
-/** Server-side enforcement of Account.mode: "read" accounts accept no writes from any tool. */
-export function assertWriteMode(account: { label: string; mode?: Account["mode"] }): void {
-  if (accountMode(account) === "read") throw new Error(`Account "${account.label}" is connected read-only; writes are disabled for it`);
+/**
+ * Server-side enforcement of Account.mode for the cloud_* tools and transfer: "read" accounts accept no writes from
+ * any tool. Like access.ts assertAccountWritable it reads the record fresh from the store (never the per-instance
+ * cache) and gives the same message. Always `await` it.
+ */
+export async function assertWriteMode(account: { label: string }): Promise<void> {
+  const fresh: Pick<Account, "mode"> = await getAccount(account.label, { fresh: true });
+  if (accountMode(fresh) === "read") throw new Error(`account ${account.label} is read-only; change it on /connect`);
 }
 

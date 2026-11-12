@@ -347,8 +347,8 @@ export async function transfer(a: TransferArgs, opts: TransferOpts): Promise<Tra
     }
   }
   if (!a.dryRun) {
-    assertWriteMode(dstAccount);
-    if (move) assertWriteMode(srcAccount);
+    await assertWriteMode(dstAccount);
+    if (move) await assertWriteMode(srcAccount);
   }
 
   if (src.kind === "google" && dst.kind === "google") {

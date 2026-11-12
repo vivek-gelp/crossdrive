@@ -55,7 +55,32 @@ export interface TextStore {
   kind: "blob" | "memory";
   read(path: string): Promise<string | null>;
   write(path: string, text: string): Promise<void>;
+  /** Every path under `prefix`, sorted. */
   listPaths(prefix: string): Promise<string[]>;
+  /**
+   * Create `path` only when it does not exist yet. Resolves true when this call created it, false when it existed.
+   * Optional: without it, callers fall back to read-then-write (not atomic).
+   */
+  createIfAbsent?(path: string, text: string): Promise<boolean>;
+  /**
+   * One level below `prefix` (which ends in "/"): the sub-folders (each ending in "/") and the files directly in it,
+   * both sorted. Optional: without it, callers derive the same from listPaths.
+   */
+  listTop?(prefix: string): Promise<{ folders: string[]; files: string[] }>;
+}
+
+/** listTop for any store: the native one when present, else derived from a full listPaths. */
+export async function listTopOf(store: TextStore, prefix: string): Promise<{ folders: string[]; files: string[] }> {
+  if (store.listTop) return store.listTop(prefix);
+  const folders = new Set<string>();
+  const files: string[] = [];
+  for (const p of await store.listPaths(prefix)) {
+    const rest = p.slice(prefix.length);
+    const i = rest.indexOf("/");
+    if (i >= 0) folders.add(prefix + rest.slice(0, i + 1));
+    else files.push(p);
+  }
+  return { folders: [...folders].sort(), files: files.sort() };
 }
 
 class MemoryStore implements TextStore {
@@ -70,6 +95,17 @@ class MemoryStore implements TextStore {
   async listPaths(prefix: string) {
     return [...this.data.keys()].filter((k) => k.startsWith(prefix)).sort();
   }
+  async createIfAbsent(path: string, text: string) {
+    if (this.data.has(path)) return false;
+    this.data.set(path, text);
+    return true;
+  }
+}
+
+/** Vercel Blob refuses `allowOverwrite: false` on an existing pathname with an "already exists" error. */
+function isAlreadyExists(e: unknown): boolean {
+  if (!(e instanceof Error)) return false;
+  return e.name === "BlobPreconditionFailedError" || /already exists/i.test(e.message);
 }
 
 class BlobStore implements TextStore {
@@ -88,8 +124,40 @@ class BlobStore implements TextStore {
     });
   }
   async listPaths(prefix: string) {
-    const r = await list({ prefix, limit: 1000 });
-    return r.blobs.map((b) => b.pathname).sort();
+    const out: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const r = await list({ prefix, limit: 1000, cursor });
+      out.push(...r.blobs.map((b) => b.pathname));
+      cursor = r.hasMore ? r.cursor : undefined;
+    } while (cursor);
+    return out.sort();
+  }
+  async createIfAbsent(path: string, text: string) {
+    try {
+      await put(path, text, {
+        access: "private",
+        addRandomSuffix: false,
+        allowOverwrite: false,
+        contentType: "application/octet-stream",
+      });
+      return true;
+    } catch (e) {
+      if (isAlreadyExists(e)) return false;
+      throw e;
+    }
+  }
+  async listTop(prefix: string) {
+    const folders: string[] = [];
+    const files: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const r = await list({ prefix, limit: 1000, cursor, mode: "folded" });
+      folders.push(...r.folders.map((f) => (f.endsWith("/") ? f : `${f}/`)));
+      files.push(...r.blobs.map((b) => b.pathname));
+      cursor = r.hasMore ? r.cursor : undefined;
+    } while (cursor);
+    return { folders: folders.sort(), files: files.sort() };
   }
 }
 
@@ -111,7 +179,12 @@ export function setStore(s: TextStore | undefined) {
 // ---- accounts ---------------------------------------------------------------
 
 let accountsCache: { at: number; accounts: Account[] } | undefined;
-const ACCOUNTS_TTL_MS = 60_000;
+/**
+ * Per-instance cache of the account list for read paths (listing, status). Serverless instances do not share memory,
+ * so a change made on /connect reaches other instances only when this expires; keep it short. Access gates (mode,
+ * mail mode, disconnect) never use it: they read the record fresh (getAccount(label, { fresh: true })).
+ */
+export const ACCOUNTS_TTL_MS = 5_000;
 
 export async function loadAccounts(force = false): Promise<Account[]> {
   if (!force && accountsCache && Date.now() - accountsCache.at < ACCOUNTS_TTL_MS) return accountsCache.accounts;
@@ -143,8 +216,9 @@ export async function removeAccount(label: string): Promise<Account[]> {
   return accounts;
 }
 
-export async function getAccount(label: string): Promise<Account> {
-  const accounts = await loadAccounts();
+/** The stored account for `label`. `fresh: true` bypasses the per-instance cache (one store read); access gates use it. */
+export async function getAccount(label: string, opts: { fresh?: boolean } = {}): Promise<Account> {
+  const accounts = await loadAccounts(opts.fresh === true);
   const a = accounts.find((x) => x.label === label);
   if (!a) {
     const have = accounts.map((x) => x.label).join(", ") || "none";

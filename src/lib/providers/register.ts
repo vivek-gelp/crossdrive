@@ -186,7 +186,7 @@ export function registerProviderWriteTools(server: McpServer, deps: Pick<Provide
     wrap(async (a: { path: string }, ctx) => {
       const ref = parseRef(a.path);
       const { account, provider } = await providerFor(ref.label);
-      assertWriteMode(account);
+      await assertWriteMode(account);
       let cur = await provider.root();
       const created: string[] = [];
       for (const seg of ref.path.split("/").filter(Boolean)) {
@@ -214,7 +214,7 @@ export function registerProviderWriteTools(server: McpServer, deps: Pick<Provide
     },
     wrap(async (a: { path?: string; account?: string; id?: string; toFolder: string }, ctx) => {
       const { label, provider, entry, account } = await resolveItem(a);
-      assertWriteMode(account);
+      await assertWriteMode(account);
       const to = parseRef(a.toFolder);
       if (to.label !== label) throw new Error(`toFolder is in account "${to.label}" but the item is in "${label}"; use transfer (move=true) across accounts`);
       const folder = await provider.stat(to.path);
@@ -237,7 +237,7 @@ export function registerProviderWriteTools(server: McpServer, deps: Pick<Provide
     wrap(async (a: { path?: string; account?: string; id?: string; newName: string; allowNonStandardName: boolean }, ctx) => {
       if (/[/\\]/.test(a.newName)) throw new Error("newName must not contain / or \\");
       const { label, provider, entry, account } = await resolveItem(a);
-      assertWriteMode(account);
+      await assertWriteMode(account);
       if (!entry.isFolder) checkName(a.newName, entry.mimeType, a.allowNonStandardName);
       const renamed = await provider.rename(entry, a.newName);
       await appendAudit({ tool: "cloud_rename", account: label, fileId: entry.id, name: a.newName, from: entry.name, actor: actorFor(ctx) });
@@ -256,7 +256,7 @@ export function registerProviderWriteTools(server: McpServer, deps: Pick<Provide
     },
     wrap(async (a: { path?: string; account?: string; id?: string }, ctx) => {
       const { label, provider, entry, account } = await resolveItem(a);
-      assertWriteMode(account);
+      await assertWriteMode(account);
       await provider.trash(entry);
       await appendAudit({ tool: "cloud_trash", account: label, fileId: entry.id, name: entry.name, from: entry.path, actor: actorFor(ctx) });
       return { trashed: true, ...show(label, entry) };

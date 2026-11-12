@@ -499,7 +499,7 @@ export function registerWriteTools(rawServer: McpServer) {
       checkName(a.name, mimeType, a.allowNonStandardName);
       if (a.sourceUrl) await assertPublicHttpsUrl(a.sourceUrl);
       const c = await ctxFor(a.account);
-      assertAccountWritable(c.account);
+      await assertAccountWritable(c.account);
       if (a.dryRun) {
         const t = await previewPutTarget(c.drive, { path: a.path, folderId: a.folderId }, c.rootId);
         if (t.folderId) assertWritable(await c.drive.getFile(t.folderId), "addChildren");
@@ -555,7 +555,7 @@ export function registerWriteTools(rawServer: McpServer) {
     wrap(async (a, ctx) => {
       checkName(a.name, a.mimeType, a.allowNonStandardName);
       const c = await ctxFor(a.account);
-      assertAccountWritable(c.account);
+      await assertAccountWritable(c.account);
       const folderId = await resolvePutTarget(c.drive, { path: a.path, folderId: a.folderId }, c.rootId);
       assertWritable(await c.drive.getFile(folderId), "addChildren");
       const uploadUrl = await c.drive.beginResumableUpload({ name: a.name, parents: [folderId], mimeType: a.mimeType }, a.mimeType, a.size);
@@ -587,7 +587,7 @@ export function registerWriteTools(rawServer: McpServer) {
     },
     wrap(async (a, ctx) => {
       const c = await ctxFor(a.account);
-      assertAccountWritable(c.account);
+      await assertAccountWritable(c.account);
       const file = await c.drive.getFile(a.fileId);
       if (file.mimeType === FOLDER_MIME) throw new Error(`${a.fileId} is a folder, not an uploaded file`);
       await appendAudit({
@@ -697,7 +697,7 @@ export function registerWriteTools(rawServer: McpServer) {
     wrap(async (a, ctx) => {
       const meta = { actor: actorOf(ctx.http?.authInfo) };
       const src = await ctxFor(a.fromAccount);
-      assertCopyAllowed(src, a.toAccount === a.fromAccount ? src : await ctxFor(a.toAccount), a.trashOriginal);
+      await assertCopyAllowed(src, a.toAccount === a.fromAccount ? src : await ctxFor(a.toAccount), a.trashOriginal);
       const file = await src.drive.getFile(a.fileId);
       if (file.mimeType === FOLDER_MIME) return copyTree(a, meta);
       if (a.resume) throw new Error("resume applies to folder copies only");

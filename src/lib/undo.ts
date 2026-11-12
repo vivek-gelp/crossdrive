@@ -74,7 +74,7 @@ async function undoOne(e: StoredAuditEntry, actor: string, dryRun: boolean): Pro
   }
   try {
     const c = await ctxFor(e.account);
-    assertAccountWritable(c.account);
+    await assertAccountWritable(c.account);
     const file = await getSource(c, e.fileId);
     const audit = (extra: { from?: string; to?: string }) =>
       appendAudit({ tool: "undo", undoOf: e.id, undoneTool: e.tool, account: e.account, fileId: file.id, name: file.name, owner: ownerLabel(c, file), actor, ...extra });

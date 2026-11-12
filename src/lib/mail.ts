@@ -50,7 +50,8 @@ export function gmailNotGranted(label: string): Error {
  * relabel; mail "off" blocks everything; mail "draft" blocks sending).
  */
 export async function mailCtxFor(label: string, need: MailNeed = "read"): Promise<MailCtx> {
-  const account = await getAccount(label);
+  // Fresh read (not the per-instance cache): mode and mail mode are access controls and must apply at once.
+  const account = await getAccount(label, { fresh: true });
   assertGoogleAccount(account);
   assertMailAllowed(account, need);
   if (!gmailGranted(account)) throw gmailNotGranted(label);
@@ -186,7 +187,7 @@ export async function saveAttachment(c: MailCtx, messageId: string, info: Attach
   const name = attachmentDriveName(info.filename, saveTo);
   checkName(name, undefined, saveTo.allowNonStandardName ?? false);
   const d = await ctxFor(saveTo.account);
-  assertAccountWritable(d.account);
+  await assertAccountWritable(d.account);
   const folderId = await resolvePutTarget(d.drive, { path: saveTo.path, folderId: saveTo.folderId }, d.rootId);
   assertWritable(await d.drive.getFile(folderId), "addChildren");
   const file = await uploadBytes(d.drive, currentDriveFetch(), { name, parents: [folderId] }, new Uint8Array(bytes), info.mimeType || "application/octet-stream");

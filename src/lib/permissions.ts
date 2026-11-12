@@ -58,7 +58,7 @@ export interface SharePreview {
 }
 
 export async function shareFile(c: Ctx, a: ShareArgs & { dryRun?: boolean }, meta: OpMeta): Promise<{ file: FileResult; permission: PermissionRow } | SharePreview> {
-  assertAccountWritable(c.account);
+  await assertAccountWritable(c.account);
   const file = await c.drive.getFile(a.fileId);
   assertCanShare(file);
   if (a.dryRun) {
@@ -84,7 +84,7 @@ export async function shareFile(c: Ctx, a: ShareArgs & { dryRun?: boolean }, met
 }
 
 export async function unshareFile(c: Ctx, a: { fileId: string; email: string; dryRun?: boolean }, meta: OpMeta): Promise<{ file: FileResult; removed: PermissionRow } | SharePreview> {
-  assertAccountWritable(c.account);
+  await assertAccountWritable(c.account);
   const file = await c.drive.getFile(a.fileId);
   assertCanShare(file);
   const perms = await c.drive.listPermissions(a.fileId);
@@ -122,7 +122,7 @@ export interface TransferResult {
 }
 
 export async function transferOwnership(c: Ctx, a: { fileId: string; toEmail: string }, meta: OpMeta): Promise<TransferResult> {
-  assertAccountWritable(c.account);
+  await assertAccountWritable(c.account);
   const file = await c.drive.getFile(a.fileId);
   if (file.driveId) throw new Error(`${file.name} is in a Shared Drive; Shared Drive items are owned by the drive, not by a person.`);
   const owner = ownerEmail(file);
@@ -176,7 +176,7 @@ export interface ShortcutArgs {
 }
 
 export async function createShortcut(c: Ctx, a: ShortcutArgs, meta: OpMeta): Promise<FileResult & { targetId: string; targetPath: string }> {
-  assertAccountWritable(c.account);
+  await assertAccountWritable(c.account);
   if (!a.path && !a.folderId) throw new Error("Give path or folderId for the folder that should hold the shortcut");
   const target = await c.drive.getFile(a.targetId);
   const folderId = a.folderId ?? (await folderFromPath(c, a.path!));

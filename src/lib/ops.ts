@@ -106,7 +106,7 @@ export interface MkdirPlan {
 }
 
 export async function planMkdir(c: Ctx, a: MkdirArgs): Promise<MkdirPlan> {
-  assertAccountWritable(c.account);
+  await assertAccountWritable(c.account);
   const parentId = a.parentId ?? (await folderFromPath(c, a.parentPath ?? "/"));
   const existing = await c.drive.findChildByName(parentId, a.name, true);
   if (!existing) assertWritable(await c.drive.getFile(parentId), "addChildren");
@@ -164,7 +164,7 @@ export interface MovePlan {
 }
 
 export async function planMove(c: Ctx, a: MoveArgs): Promise<MovePlan> {
-  assertAccountWritable(c.account);
+  await assertAccountWritable(c.account);
   const file = await getSource(c, a.fileId);
   const toFolderId = await targetFolder(c, a, `/${inboxFolder()}`);
   const target = await getTargetFolder(c, toFolderId);
@@ -230,7 +230,7 @@ export interface RenamePlan {
 }
 
 export async function planRename(c: Ctx, a: RenameArgs): Promise<RenamePlan> {
-  assertAccountWritable(c.account);
+  await assertAccountWritable(c.account);
   const file = await getSource(c, a.fileId);
   assertWritable(file, "edit");
   const unchanged = file.name === a.newName;
@@ -279,7 +279,7 @@ export interface TrashPlan {
 }
 
 export async function planTrash(c: Ctx, fileId: string): Promise<TrashPlan> {
-  assertAccountWritable(c.account);
+  await assertAccountWritable(c.account);
   const file = await getSource(c, fileId);
   assertWritable(file, "edit");
   return { file, before: await summary(c, file) };
@@ -346,15 +346,15 @@ export interface CopyResult {
 }
 
 /** Mode checks for a copy (also used by the folder copier's tool handler): the destination must be writable, the source too when it is trashed afterwards. */
-export function assertCopyAllowed(src: Ctx, dst: Ctx, trashOriginal: boolean | undefined): void {
-  assertAccountWritable(dst.account);
-  if (trashOriginal) assertAccountWritable(src.account);
+export async function assertCopyAllowed(src: Ctx, dst: Ctx, trashOriginal: boolean | undefined): Promise<void> {
+  await assertAccountWritable(dst.account);
+  if (trashOriginal) await assertAccountWritable(src.account);
 }
 
 export async function planCopy(a: CopyArgs): Promise<CopyPlan> {
   const src = await ctxFor(a.fromAccount);
   const dst = a.toAccount === a.fromAccount ? src : await ctxFor(a.toAccount);
-  assertCopyAllowed(src, dst, a.trashOriginal);
+  await assertCopyAllowed(src, dst, a.trashOriginal);
   const file = await getSource(src, a.fileId);
   if (file.mimeType === FOLDER_MIME) {
     throw new Error(`${file.name} is a folder: use the copy tool directly (it copies folders recursively in resumable slices); batch copies single files only.`);
