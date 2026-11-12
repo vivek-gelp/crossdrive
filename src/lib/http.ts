@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { jwtEnv } from "./config";
+import { googleClientProblem, jwtEnv } from "./config";
 import { issueAdminSession, verifyAdminSession, TTL } from "./jwt";
 import { OAuthError } from "./oauth";
 
@@ -68,5 +68,19 @@ export function htmlError(status: number, message: string): NextResponse {
   return new NextResponse(
     `<!doctype html><html><body style="font-family:system-ui;max-width:640px;margin:48px auto;padding:0 16px"><h1>Crossdrive</h1><p>${safe}</p><p><a href="/">Home</a></p></body></html>`,
     { status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } },
+  );
+}
+
+/**
+ * Configuration error page for routes that would redirect to Google: a missing, placeholder or malformed client
+ * only earns a Google "Error 401: invalid_client" screen, so say what is wrong here and point to /setup.
+ */
+export function googleConfigError(): NextResponse | null {
+  const problem = googleClientProblem();
+  if (!problem) return null;
+  const safe = problem.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c);
+  return new NextResponse(
+    `<!doctype html><html><body style="font-family:system-ui;max-width:640px;margin:48px auto;padding:0 16px"><h1>Crossdrive is not configured yet</h1><p>${safe}</p><p><a href="/setup">Open the setup checklist</a> · <a href="/">Home</a></p></body></html>`,
+    { status: 503, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } },
   );
 }

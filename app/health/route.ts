@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { googleClient, VERSION } from "@/lib/config";
+import { googleClientProblem, VERSION } from "@/lib/config";
 import { configWarnings } from "@/lib/status";
 import { getStore, gmailGranted, loadAccounts } from "@/lib/store";
 
@@ -29,7 +29,7 @@ export async function GET() {
       storage: store.kind,
       accounts,
       gmailAccounts,
-      googleConfigured: !!googleClient(),
+      googleConfigured: googleClientProblem() === null,
       warnings,
     },
     { headers: { "Cache-Control": "no-store" } },

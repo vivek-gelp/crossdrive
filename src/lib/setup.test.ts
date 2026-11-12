@@ -34,8 +34,8 @@ describe("setupChecks", () => {
     VAULT_JWT_SECRET: SECRET,
     VAULT_ENC_KEY: SECRET,
     VAULT_ALLOWED_EMAILS: "alex@example.com",
-    GOOGLE_CLIENT_ID: "cid-value",
-    GOOGLE_CLIENT_SECRET: "secret-value",
+    GOOGLE_CLIENT_ID: "cid-value.apps.googleusercontent.com",
+    GOOGLE_CLIENT_SECRET: "GOCSPX-secret-value",
     BLOB_READ_WRITE_TOKEN: "blob-value",
   };
   it("passes a complete setup; optional vars and manual reminders are neither pass nor fail", () => {

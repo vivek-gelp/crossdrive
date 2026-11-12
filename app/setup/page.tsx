@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { headers } from "next/headers";
-import { baseUrl, dropboxConfigured, env, microsoftConfigured } from "@/lib/config";
+import { dropboxConfigured, env, microsoftConfigured, resolveBaseUrl } from "@/lib/config";
 import { googleRedirectUris, setupChecks } from "@/lib/setup";
 import { loadAccounts } from "@/lib/store";
 
@@ -20,7 +20,8 @@ export default async function SetupPage() {
     accounts = null;
   }
   const checks = setupChecks({ env: process.env, requestOrigin, accounts });
-  const base = env("BASE_URL") ? baseUrl() : requestOrigin;
+  const resolved = resolveBaseUrl();
+  const base = resolved.source === "default" ? requestOrigin : resolved.url;
   const providerRedirects = [
     ...(microsoftConfigured() ? [{ name: "Microsoft (Azure app, platform Web)", uri: `${base}/connect/microsoft/callback` }] : []),
     ...(dropboxConfigured() ? [{ name: "Dropbox app (OAuth 2 redirect URIs)", uri: `${base}/connect/dropbox/callback` }] : []),

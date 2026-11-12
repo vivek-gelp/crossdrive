@@ -1,4 +1,4 @@
-import { allowedEmails, env, envName, googleClient, type EnvSource } from "./config";
+import { allowedEmails, env, envName, googleClient, googleClientIdProblem, googleClientSecretProblem, resolveBaseUrl, type EnvSource } from "./config";
 import { checkProviderToken } from "./providers/tokens";
 import {
   accountMail,
@@ -65,18 +65,27 @@ async function checkToken(a: Account): Promise<TokenHealth> {
 
 /** Required CROSSDRIVE_ variables (unprefixed key; legacy VAULT_ accepted) and required unprefixed ones. */
 const REQUIRED_PREFIXED = ["BASE_URL", "JWT_SECRET", "ENC_KEY", "ALLOWED_EMAILS"] as const;
+/** BASE_URL counts as set when Vercel supplies the production domain. */
+function isSet(k: (typeof REQUIRED_PREFIXED)[number], src: EnvSource): boolean {
+  return k === "BASE_URL" ? resolveBaseUrl(src).source !== "default" : env(k, src) !== undefined;
+}
 const REQUIRED_PLAIN = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"] as const;
 
 /** Configuration warnings that need no request: missing env, memory store, base URL vs the Vercel production host. */
 export function configWarnings(src: EnvSource = process.env): string[] {
   const w: string[] = [];
-  const missing = [...REQUIRED_PREFIXED.filter((k) => env(k, src) === undefined).map(envName), ...REQUIRED_PLAIN.filter((k) => !src[k])];
+  const missing = [...REQUIRED_PREFIXED.filter((k) => !isSet(k, src)).map(envName), ...REQUIRED_PLAIN.filter((k) => !src[k])];
   if (missing.length) w.push(`Missing environment variables: ${missing.join(", ")}.`);
+  const idProblem = googleClientIdProblem(src.GOOGLE_CLIENT_ID);
+  if (idProblem) w.push(`GOOGLE_CLIENT_ID: ${idProblem}`);
+  const secretProblem = src.GOOGLE_CLIENT_SECRET ? googleClientSecretProblem(src.GOOGLE_CLIENT_SECRET) : null;
+  if (secretProblem) w.push(`GOOGLE_CLIENT_SECRET: ${secretProblem}`);
   if (!src.BLOB_READ_WRITE_TOKEN) {
     w.push("BLOB_READ_WRITE_TOKEN is not set: using in-memory storage; connected accounts and the audit log are lost on restart.");
   }
   const prod = src.VERCEL_PROJECT_PRODUCTION_URL;
   const base = env("BASE_URL", src);
+  // Only an explicit value can disagree; without one the base URL is the production domain itself.
   if (base && prod && src.VERCEL_ENV === "production") {
     const w2 = baseUrlMismatch(base, `https://${prod}`);
     if (w2) w.push(w2);
@@ -92,10 +101,13 @@ export function baseUrlMismatch(base: string, requestOrigin: string): string | n
     b = new URL(base);
     r = new URL(requestOrigin);
   } catch {
-    return `${envName("BASE_URL")} is not a valid URL.`;
+    return `${envName("BASE_URL")} is "${base}", which is not a valid URL. It must be this deployment's own address, not the GitHub repository URL.`;
   }
   if (b.host === r.host) return null;
-  return `${envName("BASE_URL")} host (${b.host}) differs from the host serving this request (${r.host}); OAuth redirect URIs and token issuer will not match.`;
+  return (
+    `${envName("BASE_URL")} is "${base}": its host (${b.host}) differs from the host serving this request (${r.host}). ` +
+    `It must be this deployment's own address (such as ${r.origin}), not the GitHub repository URL; otherwise OAuth redirect URIs and the token issuer will not match.`
+  );
 }
 
 function ageDays(iso: string): number {

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { dropboxConfigured, env, googleClient, microsoftConfigured } from "@/lib/config";
+import { dropboxConfigured, env, googleClientProblem, microsoftConfigured } from "@/lib/config";
 import { csrfToken } from "@/lib/csrf";
 import { ADMIN_COOKIE, adminEmail } from "@/lib/http";
 import { accountStatus, type AccountStatus } from "@/lib/status";
@@ -119,7 +119,8 @@ export default async function ConnectPage({ searchParams }: { searchParams: Prom
   const notice = typeof sp.connected === "string" ? `Connected "${sp.connected}".` : typeof sp.notice === "string" ? sp.notice : null;
   const error = typeof sp.error === "string" ? sp.error : null;
   const email = await adminEmail();
-  const google = googleClient();
+  const googleProblem = googleClientProblem();
+  const google = googleProblem === null;
 
   if (!email) {
     return (
@@ -135,7 +136,7 @@ export default async function ConnectPage({ searchParams }: { searchParams: Prom
           </p>
         ) : (
           <p className="badge badge-err">
-            Google OAuth client is not configured on this deployment. See <a href="/setup">/setup</a>.
+            {googleProblem} See <a href="/setup">/setup</a>.
           </p>
         )}
         <p>

@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.1 (2026-11-12)
+
+Fixes for traps found in a first real deployment. No environment variable or redirect URI changes are required.
+
+- `CROSSDRIVE_BASE_URL` is optional on Vercel: when it is unset, Crossdrive uses Vercel's production domain
+  (`VERCEL_PROJECT_PRODUCTION_URL`), so the first deploy no longer needs a second deploy to set it. An explicit value
+  still wins; set it for a custom domain. `/setup`, `/health` and the `status` tool show the Vercel value as passing, and
+  the "host differs" warning now shows the current value and says it must be the deployment's own address, not the
+  GitHub repository URL. The Deploy button no longer asks for it.
+- `/setup` checks the shape of `GOOGLE_CLIENT_ID` (must end in `.apps.googleusercontent.com`) and
+  `GOOGLE_CLIENT_SECRET` (not empty, no whitespace, no placeholder text such as `PASTE_CLIENT_ID`), without printing
+  either value. A secret without the `GOCSPX-` prefix is marked "check", not "fail". `/connect` and the sign-in routes
+  show a configuration error pointing to `/setup` instead of sending you to Google's "Error 401: invalid_client".
+- Setup docs updated to match (README, setup-vercel, setup-google troubleshooting for `invalid_client`, `.env.example`).
+- The display font is bundled with the repo; builds no longer fetch Google Fonts (a redeploy failed on that).
+- Patched transitive dependencies: postcss, zod, minimatch.
+
 ## 1.0.0 - Crossdrive (2026-11-10)
 
 The project is renamed from "Vault MCP" to **Crossdrive** and released under the MIT licence. This version generalises

@@ -36,20 +36,27 @@ the only delete, mail is draft-only by default, every write is audited, and each
 
 ## Deploy to Vercel
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvivek-gelp%2Fcrossdrive&env=GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,CROSSDRIVE_JWT_SECRET,CROSSDRIVE_ENC_KEY,CROSSDRIVE_ALLOWED_EMAILS,CROSSDRIVE_BASE_URL&envDescription=Create%20a%20Google%20OAuth%20client%20and%20two%20random%20secrets%20first&envLink=https%3A%2F%2Fgithub.com%2Fvivek-gelp%2Fcrossdrive%2Fblob%2Fmain%2Fdocs%2Fsetup-vercel.md&project-name=crossdrive&repository-name=crossdrive&stores=%5B%7B%22type%22%3A%22blob%22%7D%5D)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvivek-gelp%2Fcrossdrive&env=GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,CROSSDRIVE_JWT_SECRET,CROSSDRIVE_ENC_KEY,CROSSDRIVE_ALLOWED_EMAILS&envDescription=Create%20a%20Google%20OAuth%20client%20and%20two%20random%20secrets%20first&envLink=https%3A%2F%2Fgithub.com%2Fvivek-gelp%2Fcrossdrive%2Fblob%2Fmain%2Fdocs%2Fsetup-vercel.md&project-name=crossdrive&repository-name=crossdrive&stores=%5B%7B%22type%22%3A%22blob%22%7D%5D)
 
 Do the Google Cloud part first ([docs/setup-google.md](docs/setup-google.md)), because the button asks for the client
-id and secret. Full walkthrough: [docs/setup-vercel.md](docs/setup-vercel.md).
+id and secret. You do not need to set `CROSSDRIVE_BASE_URL` on Vercel: Crossdrive uses the project's production domain
+automatically. Set it only for a custom domain. Full walkthrough: [docs/setup-vercel.md](docs/setup-vercel.md).
+
+If you are deploying from the account that owns this repository, use Vercel's Import flow instead of the button; the
+button creates a copy of the repo and needs a new name.
 
 ## Quickstart
 
 1. **Create a Google OAuth client** in your own Google Cloud project, with the Drive and Gmail APIs enabled and the
    consent screen set to Internal (Workspace) or published to Production (personal Gmail).
    [Step by step](docs/setup-google.md).
-2. **Deploy to Vercel** with the button above, attach a Blob store, and paste the client id and secret. Generate the two
-   secrets with `openssl rand -base64 32` (run it twice). Set `CROSSDRIVE_BASE_URL` to your deployment URL.
-3. **Add the redirect URIs** `<your URL>/api/google/callback` and `<your URL>/oauth/google-callback` to the Google
-   client, then redeploy. Open `<your URL>/setup` to see a checklist of what is still missing.
+2. **Deploy to Vercel** with the button above, attach a Blob store, and paste the client id (it ends in
+   `.apps.googleusercontent.com`) and secret. Generate the two secrets with `openssl rand -base64 32` (run it twice).
+   The base URL is taken from Vercel's production domain; set `CROSSDRIVE_BASE_URL` only for a custom domain, and then
+   to the deployment's own address, never the GitHub repository URL.
+3. **Open `<your URL>/setup`.** It checks every variable (including placeholder text left in the Google client id or
+   secret) and lists the two redirect URIs to add to the Google client: `<your URL>/api/google/callback` and
+   `<your URL>/oauth/google-callback`.
 4. **Connect your accounts** at `<your URL>/connect`: pick a label (for example `work`, `personal`, `clientco`) and sign
    in with that Google account. New accounts start as read + write with mail as drafts only; switch an account to
    read-only or change its mail mode on its card. Repeat for each account.
@@ -226,7 +233,7 @@ Copy `.env.example`. The legacy `VAULT_` prefix is still accepted for every `CRO
 | `CROSSDRIVE_JWT_SECRET` | Signs OAuth artefacts; rotating it revokes every issued token |
 | `CROSSDRIVE_ENC_KEY` | 32 random bytes, base64; encrypts stored refresh tokens |
 | `CROSSDRIVE_ALLOWED_EMAILS` | Comma-separated emails allowed to sign in and administer |
-| `CROSSDRIVE_BASE_URL` | Public URL of the deployment |
+| `CROSSDRIVE_BASE_URL` | Public URL of the deployment. Optional on Vercel, where it defaults to the production domain; set it for a custom domain or when hosting elsewhere |
 | `CROSSDRIVE_STATIC_TOKENS`, `CROSSDRIVE_READONLY_TOKENS` | Optional bearer tokens for scripts and other clients |
 | `CROSSDRIVE_MAIL_ALLOWED_RECIPIENTS` | Optional allowlist of recipients for `mail_send` and `mail_reply` |
 | `CROSSDRIVE_NAMING_RULE` | `date-entity` enforces `YYYY-MM-DD_Company_WhatItIs.ext` on uploads and renames; default off |

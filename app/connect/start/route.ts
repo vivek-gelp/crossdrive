@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { isValidLabel, jwtEnv } from "@/lib/config";
 import { googleConsentUrl } from "@/lib/google";
-import { adminEmail, htmlError } from "@/lib/http";
+import { adminEmail, googleConfigError, htmlError } from "@/lib/http";
 import { issueState } from "@/lib/jwt";
 import { accountProvider, loadAccounts } from "@/lib/store";
 
@@ -30,6 +30,8 @@ export async function GET(req: Request) {
     return back("Label must start with a letter and use only a-z, 0-9 and hyphens (max 24 characters).");
   }
   if (email && !EMAIL_RE.test(email)) return back("That e-mail address does not look valid.");
+  const misconfigured = googleConfigError();
+  if (misconfigured) return misconfigured;
   try {
     const existing = (await loadAccounts(true)).find((a) => a.label === label);
     if (existing && !reconnect) return back(`"${label}" is already connected. Use Reconnect on its card, or pick another label.`);

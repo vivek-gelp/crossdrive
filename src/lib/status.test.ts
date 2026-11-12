@@ -25,7 +25,7 @@ beforeEach(async () => {
     VAULT_JWT_SECRET: Buffer.alloc(32, 4).toString("base64"),
     VAULT_BASE_URL: "https://vault.example.com",
     VAULT_ALLOWED_EMAILS: "alex@example.com",
-    GOOGLE_CLIENT_ID: "cid",
+    GOOGLE_CLIENT_ID: "cid.apps.googleusercontent.com",
     GOOGLE_CLIENT_SECRET: "csecret",
     BLOB_READ_WRITE_TOKEN: "blob",
   });

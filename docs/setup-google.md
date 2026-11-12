@@ -114,6 +114,14 @@ trailing slash, a preview-deployment URL instead of the production URL, or `CROS
 you are browsing. Both `<BASE_URL>/api/google/callback` and `<BASE_URL>/oauth/google-callback` must be present. After
 editing, wait a few minutes.
 
+### "Error 401: invalid_client" / "The OAuth client was not found"
+
+Google does not recognise the client ID Crossdrive sent: `GOOGLE_CLIENT_ID` is wrong or still a placeholder (such as
+`PASTE_CLIENT_ID`). Copy the **Client ID** (it ends in `.apps.googleusercontent.com`) and the **Client secret** again
+from Google Cloud Console, Google Auth Platform, Clients (older consoles: APIs & Services, Credentials), update both
+variables in Vercel and redeploy. `/setup` flags values that cannot be real; since 1.0.1 the sign-in pages show a
+configuration error pointing to `/setup` instead of sending you to Google.
+
 ### Connections stop working after about 7 days
 
 The consent screen is still in Testing mode. Publish it to Production (step 4), then reconnect each account once

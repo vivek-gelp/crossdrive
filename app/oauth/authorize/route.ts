@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { jwtEnv } from "@/lib/config";
 import { googleLoginUrl } from "@/lib/google";
-import { htmlError } from "@/lib/http";
+import { googleConfigError, htmlError } from "@/lib/http";
 import { issueState } from "@/lib/jwt";
 import { OAuthError, redirectWithParams, validateAuthorizeRequest } from "@/lib/oauth";
 
@@ -10,6 +10,8 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   const params = new URL(req.url).searchParams;
+  const misconfigured = googleConfigError();
+  if (misconfigured) return misconfigured;
   try {
     const a = await validateAuthorizeRequest(params);
     const state = await issueState(jwtEnv(), {

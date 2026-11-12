@@ -25,7 +25,8 @@ brake).
 ## 2. Deploy
 
 1. Click the **Deploy with Vercel** button in the [README](../README.md), or import the repository in the Vercel
-   dashboard (Add New, Project).
+   dashboard (Add New, Project). If you are deploying from the account that owns the repository, use the Import flow;
+   the button creates a copy of the repo and needs a new name.
 2. When asked for environment variables, fill in:
 
    | Name | Value |
@@ -35,7 +36,12 @@ brake).
    | `CROSSDRIVE_JWT_SECRET` | generated above |
    | `CROSSDRIVE_ENC_KEY` | generated above |
    | `CROSSDRIVE_ALLOWED_EMAILS` | comma-separated Google emails allowed to sign in and administer, for example `you@example.com` |
-   | `CROSSDRIVE_BASE_URL` | the deployment URL, no trailing slash; you may not know it yet, see step 4 |
+
+   Paste the Google values exactly as Google shows them: the client ID ends in `.apps.googleusercontent.com` and the
+   client secret (current clients) starts with `GOCSPX-`. Do not leave placeholder text such as `PASTE_CLIENT_ID`.
+
+   `CROSSDRIVE_BASE_URL` is not needed on Vercel: Crossdrive reads the project's production domain from Vercel's
+   `VERCEL_PROJECT_PRODUCTION_URL`. See step 4 for custom domains.
 
 3. When the clone flow offers a **Blob** store, create it. If it does not, do it in step 3 below.
 
@@ -48,15 +54,17 @@ access to it.
 
 Without a Blob token (for example on your laptop) the app uses an in-memory store and forgets everything on restart.
 
-## 4. Set the base URL, then redeploy
+## 4. Check the base URL and add the redirect URIs
 
-1. Note your production URL, for example `https://my-crossdrive.vercel.app`. A custom domain is fine and is cleaner for
-   the Google consent screen.
-2. Set `CROSSDRIVE_BASE_URL` to it under Settings, Environment Variables.
-3. In Google Cloud add the two redirect URIs `<BASE_URL>/api/google/callback` and `<BASE_URL>/oauth/google-callback`
-   to the OAuth client.
-4. Redeploy (Deployments, the latest one, Redeploy) so the new variables take effect. Environment variable changes never
-   apply to existing deployments.
+1. Open `/setup` on your production URL, for example `https://my-crossdrive.vercel.app/setup`. The base URL row says
+   "taken from Vercel" and shows the address Crossdrive uses; call it `<BASE_URL>` below.
+2. In Google Cloud add the two redirect URIs `<BASE_URL>/api/google/callback` and `<BASE_URL>/oauth/google-callback`
+   to the OAuth client. `/setup` lists both, ready to copy. No redeploy is needed for this.
+3. Custom domain only: add the domain to the Vercel project, set `CROSSDRIVE_BASE_URL` to it (for example
+   `https://drive.example.com`, no trailing slash) under Settings, Environment Variables, use it for the redirect URIs,
+   and redeploy (Deployments, the latest one, Redeploy). Environment variable changes never apply to existing
+   deployments. The value must be this deployment's own address, not the GitHub repository URL; `/setup` flags a value
+   whose host differs from the one you opened it on.
 
 Optional variables are described in the [README configuration table](../README.md#configuration) and in
 `.env.example`.
@@ -65,7 +73,8 @@ Optional variables are described in the [README configuration table](../README.m
 
 1. Open `<BASE_URL>/setup`. It is a checklist showing which required variables are present (under their `CROSSDRIVE_`
    names; the legacy `VAULT_` names also count), whether a Blob store token is set, whether the secrets have the right
-   length and whether the base URL matches the address you opened. Fix anything marked fail and redeploy.
+   length, whether the Google client ID and secret look real (not placeholders) and whether the base URL matches the
+   address you opened. Fix anything marked fail and redeploy.
 2. Open `<BASE_URL>/connect`. Sign in with an email from `CROSSDRIVE_ALLOWED_EMAILS`.
 3. Add your first account: type a label (lowercase letters, digits and hyphens, starting with a letter, up to 24
    characters, such as `work`), optionally the account's email to pre-select it, and click **Connect Google**. Tick
@@ -101,6 +110,11 @@ to environment variables or redirect URIs is listed there.
 ## Troubleshooting
 
 - `/setup` says the Blob store is missing: the store is not connected to this environment; connect it and redeploy.
+- `/setup` fails `GOOGLE_CLIENT_ID` or `GOOGLE_CLIENT_SECRET` with "does not look like" or "placeholder": the variable
+  still holds example text or a wrong value. Copy both from Google Cloud Console, Google Auth Platform, Clients, update
+  the variables and redeploy. Left as is, Google answers "Error 401: invalid_client".
+- `/setup` says the `CROSSDRIVE_BASE_URL` host differs: the variable holds another address (often the GitHub repository
+  link). Delete it to use the Vercel production domain, or set it to your custom domain, then redeploy.
 - Everyone gets signed out after a deploy: `CROSSDRIVE_JWT_SECRET` changed. Keep it stable.
 - "Gmail not granted" or "token invalid" for an account: reconnect it on `/connect`. See the Google troubleshooting
   section for `invalid_grant`.
