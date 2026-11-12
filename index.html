@@ -123,24 +123,24 @@ footer.wrap p{margin:0;flex-basis:100%}
       <a class="btn" href="https://github.com/vivek-gelp/crossdrive/blob/main/docs/setup-vercel.md">Deploy guide</a>
     </div>
 
-    <div class="demo" role="img" aria-label="Example: an assistant previews and then applies a move of 12 invoices between two drives">
+    <div class="demo" role="img" aria-label="Example: an assistant previews and then runs a copy of an invoices folder from one drive to another">
       <div class="demo-bar"><i style="background:var(--teal)"></i><i style="background:var(--amber)"></i><span style="margin-left:8px">assistant · crossdrive</span></div>
       <div class="demo-body" aria-hidden="true">
         <p><span class="you">you</span>
-Move last year's invoices from my personal drive to the company drive.</p>
-        <p><span class="who">crossdrive · batch move · dry run</span>
+Copy last year's invoices from my personal drive into the company drive.</p>
+        <p><span class="who">crossdrive · copy · dry run</span>
 from personal:/Invoices/2025
-to   work:/Finance/Invoices/2025
-12 files · 48 MB · 0 conflicts</p>
+to   work:/Finance/Invoices
+12 files · 1 folder · nothing written yet</p>
         <p><span class="who">assistant</span>
-12 invoices, 48 MB, no name clashes. Nothing is deleted. Apply?</p>
+One folder with 12 invoices. The originals stay where they are. Copy?</p>
         <p><span class="you">you</span>
 Yes.</p>
-        <p><span class="who">crossdrive · batch move</span>
-<span class="ok">applied · 12 moved · undo id a1f3</span></p>
+        <p><span class="who">crossdrive · copy</span>
+<span class="ok">done · 12 copied · 0 failed · audited</span></p>
       </div>
     </div>
-    <!-- DEMO: embed the demo GIF/video inside the #demo container below when it exists (the README suggests a 20-second phone recording). An empty container renders nothing. -->
+    <!-- DEMO: embed the demo GIF/video inside the #demo container below when it exists (the README suggests a 20-second recording made with a client that has actually been tested). An empty container renders nothing. -->
     <div id="demo"></div>
   </section>
 
@@ -150,7 +150,7 @@ Yes.</p>
       <div class="card"><h3>Every account, one connection</h3><p>Connect several Google accounts and give each a label. Your assistant addresses files as <code>work:/Finance/2026</code> or <code>personal:/Taxes</code> and searches across all of them at once.</p></div>
       <div class="card"><h3>Across clouds (BETA)</h3><p>Move and copy files and whole folders between accounts, and between Google Drive, OneDrive and Dropbox, without downloading anything to your laptop. OneDrive and Dropbox support is beta and not yet tested against live accounts.</p></div>
       <div class="card"><h3>Gmail, draft-only by default</h3><p>Search and read mail in each connected Gmail account, save attachments to the right folder, and prepare replies. Sending stays off until you turn it on per account.</p></div>
-      <div class="card"><h3>Works from your phone</h3><p>It is a remote MCP server: one URL works in Claude, ChatGPT and any MCP client, on desktop, web and the mobile apps.</p></div>
+      <div class="card"><h3>One URL for your AI clients</h3><p>It is a remote MCP server with OAuth, meant for any client that can add one, such as Claude, Claude Code or ChatGPT. The live tests used a scripted OAuth client in Chrome; those apps have not been tried against it yet.</p></div>
     </div>
   </section>
 
@@ -159,9 +159,9 @@ Yes.</p>
     <p class="muted">These rules are enforced by the server, not by a prompt. An assistant that misreads a request still cannot get past them.</p>
     <div class="grid">
       <div class="card"><h3>Trash only</h3><p>There is no permanent-delete call in the code. Deleting means moving to the provider's trash, where you can restore it.</p></div>
-      <div class="card"><h3>Read-only accounts</h3><p>Mark any account read-only and the server rejects every write to it, whatever the assistant asks for.</p></div>
+      <div class="card"><h3>Read-only accounts</h3><p>Mark any account read-only and the server rejects every write to it, whatever the assistant asks for. Copying out of it streams the files, so not even a temporary permission is added.</p></div>
       <div class="card"><h3>Dry run, then undo</h3><p>Most writes can be previewed with a dry run first. Moves, renames and trashes are logged with an id that undo can roll back.</p></div>
-      <div class="card"><h3>Audit log</h3><p>Each write is recorded with time, client, account, action and file ids. File contents and mail bodies are not logged.</p></div>
+      <div class="card"><h3>Audit log</h3><p>Each write is recorded with time, client, account, action and file ids; mail entries add recipients and subject. File contents and mail bodies are not logged.</p></div>
       <div class="card"><h3>Per-client consent</h3><p>No client gets a token until you sign in and approve it. Clients that should only look can be given read-only access.</p></div>
       <div class="card"><h3>Content is data</h3><p>Text inside files and emails is returned as untrusted data. Instructions found in a document never become tool calls on their own.</p></div>
     </div>
@@ -200,7 +200,7 @@ Yes.</p>
       <pre><code id="cmd">claude mcp add --transport http crossdrive https://YOUR-DEPLOYMENT.vercel.app/api/mcp</code></pre>
       <button class="btn" type="button" id="copy-btn" aria-label="Copy command">Copy</button>
     </div>
-    <p class="note">OneDrive and Dropbox support is beta and not yet tested against live accounts.</p>
+    <p class="note">Version 1.0.1 was tested live against real Google accounts on 12 November 2026; the README lists <a href="https://github.com/vivek-gelp/crossdrive#what-has-been-tested">what has and has not been tested</a>. OneDrive and Dropbox support is beta and not yet tested against live accounts.</p>
   </section>
 
   <section class="card" aria-labelledby="h-hosted">
