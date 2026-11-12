@@ -54,6 +54,8 @@ export const NO_TEXT_LAYER = "No extractable text: this PDF has no text layer (s
 
 export interface ReadOpts {
   sheet?: string;
+  /** xlsx: told every sheet name of the workbook and the one that was read. */
+  onSheets?: (sheets: string[], read: string) => void;
 }
 
 /** Text of a PDF, pages joined by blank lines. Throws NoTextError when no page has text. */
@@ -83,6 +85,7 @@ export async function readContent(kind: ReaderKind, bytes: Buffer, opts: ReadOpt
       if (!sheetName || !wb.Sheets[sheetName]) {
         throw new Error(`Sheet "${opts.sheet}" not found. Sheets: ${wb.SheetNames.join(", ")}`);
       }
+      opts.onSheets?.(wb.SheetNames, sheetName);
       return XLSX.utils.sheet_to_csv(wb.Sheets[sheetName]);
     }
     case "none":

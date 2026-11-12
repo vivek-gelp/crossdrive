@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { assertAccountWritable } from "./access";
+import { defaultUploadMime } from "./filetypes";
 import { appendAudit, readAudit } from "./audit";
 import { executeBatch, MAX_BATCH_OPS, previewBatch, type BatchOp } from "./batch";
 import { listChanges, parseSince } from "./changes";
@@ -153,11 +154,11 @@ export function registerReadTools(rawServer: McpServer, opts: RegisterOpts = { f
         drives = await c.drive.listDrives();
       } catch (e) {
         if (!(e instanceof SharedDrivesUnavailableError)) throw e;
-        if (/@(gmail|googlemail)\.com$/.test(c.ownEmail)) {
-          return { account: a.account, drives: [], note: "This is a consumer Google account; consumer accounts have no Shared Drives." };
-        }
+        if (isConsumerGoogle(c.ownEmail)) return { account: a.account, drives: [], note: CONSUMER_DRIVES_NOTE };
         throw new Error(`Shared Drives not reachable for ${a.account}: ${e.message}. The Workspace admin may have disabled Shared Drives for this user, or the grant lacks Drive access; reconnect on /connect.`);
       }
+      // Google answers a consumer account with an empty list rather than an error; the note is promised either way.
+      if (drives.length === 0 && isConsumerGoogle(c.ownEmail)) return { account: a.account, drives: [], note: CONSUMER_DRIVES_NOTE };
       return { account: a.account, drives: drives.map((d) => ({ id: d.id, name: d.name, path: `${a.account}:${DRIVE_PREFIX}/${d.name}` })) };
     }),
   );
@@ -270,7 +271,7 @@ export function registerReadTools(rawServer: McpServer, opts: RegisterOpts = { f
         fileId: z.string(),
         maxChars: z.number().int().min(100).max(200_000).default(20_000),
         offset: z.number().int().min(0).default(0),
-        sheet: z.string().optional().describe("xlsx sheet name (default first)"),
+        sheet: z.string().optional().describe("xlsx sheet name (default first; the result lists every sheet in `sheets`)"),
       }),
       annotations: { readOnlyHint: true },
     },
@@ -286,8 +287,9 @@ export function registerReadTools(rawServer: McpServer, opts: RegisterOpts = { f
       }
       const { bytes } = await c.drive.download(meta.id, exportMime);
       try {
-        const full = await readContent(kind, bytes, { sheet: a.sheet });
-        return { notice: UNTRUSTED_NOTICE, ...base, ...paginate(full, a.offset, a.maxChars) };
+        let sheets: { sheets: string[]; sheet: string } | undefined;
+        const full = await readContent(kind, bytes, { sheet: a.sheet, onSheets: (all, read) => void (sheets = { sheets: all, sheet: read }) });
+        return { notice: UNTRUSTED_NOTICE, ...base, ...(sheets ?? {}), ...paginate(full, a.offset, a.maxChars) };
       } catch (e) {
         if (e instanceof NoTextError) return { ...base, content: null, note: e.message };
         throw e;
@@ -448,6 +450,9 @@ export function registerReadTools(rawServer: McpServer, opts: RegisterOpts = { f
   registerProviderReadTools(server);
 }
 
+const CONSUMER_DRIVES_NOTE = "This is a consumer Google account; consumer accounts have no Shared Drives.";
+const isConsumerGoogle = (email: string) => /@(gmail|googlemail)\.com$/i.test(email);
+
 export function registerWriteTools(rawServer: McpServer) {
   const server = withResultGuard(rawServer);
   server.registerTool(
@@ -486,7 +491,10 @@ export function registerWriteTools(rawServer: McpServer) {
         content: z.string().optional(),
         contentBase64: z.string().optional(),
         sourceUrl: z.string().url().optional().describe("https URL to fetch the bytes from (server-side streaming, no credentials sent)"),
-        mimeType: z.string().optional().describe("Default text/plain for content, the source's Content-Type for sourceUrl"),
+        mimeType: z
+          .string()
+          .optional()
+          .describe("Default: from the name's extension (.pdf, .docx, .xlsx, .csv, .png, ...; contentBase64 with an unknown extension gets application/octet-stream, text content gets text/plain), the source's Content-Type for sourceUrl"),
         allowNonStandardName: z.boolean().default(false),
         dryRun,
       }),
@@ -495,7 +503,7 @@ export function registerWriteTools(rawServer: McpServer) {
     wrap(async (a, ctx) => {
       const given = [a.content !== undefined, a.contentBase64 !== undefined, a.sourceUrl !== undefined].filter(Boolean).length;
       if (given !== 1) throw new Error("Provide exactly one of content, contentBase64 or sourceUrl");
-      const mimeType = a.mimeType ?? (a.sourceUrl ? undefined : "text/plain");
+      const mimeType = a.mimeType ?? (a.sourceUrl ? undefined : defaultUploadMime(a.name, a.contentBase64 !== undefined ? "base64" : "text"));
       checkName(a.name, mimeType, a.allowNonStandardName);
       if (a.sourceUrl) await assertPublicHttpsUrl(a.sourceUrl);
       const c = await ctxFor(a.account);
@@ -521,13 +529,13 @@ export function registerWriteTools(rawServer: McpServer) {
       const actor = actorOf(ctx.http?.authInfo);
       if (a.sourceUrl) {
         const r = await uploadFromUrl(c.drive, guardedSourceFetch(currentDriveFetch()), { sourceUrl: a.sourceUrl, name: a.name, folderId, mimeType: a.mimeType });
-        await appendAudit({ tool: "put", account: a.account, fileId: r.file.id, name: r.file.name, to: folderId, owner: ownerLabel(c, r.file), actor, size: r.bytes, sourceUrl: a.sourceUrl });
-        return { ...(await toResult(c, r.file)), bytes: r.bytes, sourceUrl: a.sourceUrl };
+        const entry = await appendAudit({ tool: "put", account: a.account, fileId: r.file.id, name: r.file.name, to: folderId, owner: ownerLabel(c, r.file), actor, size: r.bytes, sourceUrl: a.sourceUrl });
+        return { ...(await toResult(c, r.file)), bytes: r.bytes, sourceUrl: a.sourceUrl, auditId: entry.id };
       }
       const bytes = a.contentBase64 !== undefined ? Buffer.from(a.contentBase64, "base64") : Buffer.from(a.content ?? "", "utf8");
       const file = await c.drive.upload({ name: a.name, parents: [folderId] }, new Uint8Array(bytes), mimeType ?? "text/plain");
-      await appendAudit({ tool: "put", account: a.account, fileId: file.id, name: file.name, to: folderId, owner: ownerLabel(c, file), actor, size: bytes.length });
-      return toResult(c, file);
+      const entry = await appendAudit({ tool: "put", account: a.account, fileId: file.id, name: file.name, to: folderId, owner: ownerLabel(c, file), actor, size: bytes.length });
+      return { ...(await toResult(c, file)), auditId: entry.id };
     }),
   );
 

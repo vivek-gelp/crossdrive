@@ -41,6 +41,9 @@ describe("readContent", () => {
     const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
     expect((await readContent("xlsx", buf, {})).trim()).toBe("a,b\n1,2");
     expect((await readContent("xlsx", buf, { sheet: "Two" })).trim()).toBe("z\n9");
+    let told: unknown;
+    await readContent("xlsx", buf, { onSheets: (all, read) => (told = { all, read }) });
+    expect(told).toEqual({ all: ["One", "Two"], read: "One" });
   });
   it("extracts text from a minimal PDF without browser globals", async () => {
     expect("DOMMatrix" in globalThis).toBe(false);

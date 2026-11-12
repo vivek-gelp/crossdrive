@@ -58,7 +58,10 @@ export interface FileResult {
   mimeType: string;
   /** `label:/A/B/name` (My Drive), `label:~shared/Top/Sub/name` ("Shared with me") or `label:drive/<Drive>/Sub/name` (Shared Drive). */
   path: string;
-  /** Owner email, or "me" when the connected account owns it (Shared Drive items count as "me"). */
+  /**
+   * Owner email, or "me" when the connected account owns it (Shared Drive items count as "me"), or "unknown" when
+   * Drive withholds the owner of an item shared with the account.
+   */
   owner: string;
   /** True when someone else owns the item (it was shared with this account). */
   shared: boolean;
@@ -77,14 +80,17 @@ export function ownerEmail(f: DriveFile): string | undefined {
 /** Pure mapping of a Drive file to the result shape every tool returns. */
 export function fileResult(label: string, ownEmail: string, f: DriveFile, path: string): FileResult {
   const owner = ownerEmail(f);
-  const mine = !owner || owner === ownEmail.toLowerCase();
+  // No owner at all: Shared Drive items (they count as "me"), or an item whose owner Drive hides from this account.
+  // ownedByMe=false tells the second case apart; treating it as "me" reported foreign items as the account's own.
+  const hidden = !owner && !f.driveId && f.ownedByMe === false;
+  const mine = !hidden && (!owner || owner === ownEmail.toLowerCase());
   return {
     account: label,
     id: f.id,
     name: f.name,
     mimeType: f.mimeType,
     path,
-    owner: mine ? "me" : (f.owners?.[0]?.emailAddress ?? "me"),
+    owner: hidden ? "unknown" : mine ? "me" : (f.owners?.[0]?.emailAddress ?? "me"),
     shared: !mine,
     canEdit: f.capabilities?.canEdit ?? true,
     modifiedTime: f.modifiedTime,
@@ -110,8 +116,7 @@ export function assertWritable(f: DriveFile, need: "edit" | "addChildren"): void
 
 /** Owner as recorded in the audit log: email, or "me" for the connected account. */
 export function ownerLabel(c: Ctx, f: DriveFile): string {
-  const owner = ownerEmail(f);
-  return !owner || owner === c.ownEmail ? "me" : (f.owners?.[0]?.emailAddress ?? "me");
+  return fileResult(c.account.label, c.ownEmail, f, "").owner;
 }
 
 export async function toResult(c: Ctx, f: DriveFile, pathHint?: string): Promise<FileResult> {

@@ -5,7 +5,13 @@
  * newest first and paged with one opaque cursor that holds, per account, the
  * Drive page token of the page being consumed and how many of its items were
  * already returned, so no item is skipped when the merge cuts a page.
+ *
+ * Drive cannot order full-text queries (fullText cannot be combined with orderBy), so each Drive page comes in
+ * relevance order. Every page is sorted newest first before merging (which also keeps the "already returned" count
+ * meaningful when a page is cut), but pages are not globally ordered by date. Drive can also return an item on two
+ * consecutive pages; the cursor remembers short keys of the items already returned and drops repeats.
  */
+import { createHash } from "node:crypto";
 import { ctxFor, folderFromPath, toResult, type Ctx, type FileResult } from "./ctx";
 import type { DriveFile } from "./drive";
 import { parsePathArg } from "./paths";
@@ -36,7 +42,18 @@ interface Cursor {
   /** Per-account page size the tokens were issued for. */
   p: number;
   a: Record<string, AccountCursor>;
+  /** Short keys of items already returned (newest last, capped at SEEN_CAP); absent in cursors from before 1.0.1. */
+  x?: string[];
 }
+
+/** How many returned items a cursor remembers for de-duplication. */
+export const SEEN_CAP = 200;
+
+function seenKey(label: string, id: string): string {
+  return createHash("sha256").update(`${label}:${id}`).digest("base64url").slice(0, 10);
+}
+
+const newestFirst = (x: DriveFile, y: DriveFile) => (y.modifiedTime ?? "").localeCompare(x.modifiedTime ?? "");
 
 export function encodeCursor(c: Cursor): string {
   return Buffer.from(JSON.stringify(c), "utf8").toString("base64url");
@@ -109,7 +126,7 @@ export async function findAcross(labels: string[], a: FindArgs, timeoutMs = FIND
             limit: pageSize,
             pageToken: st.t,
           });
-          return { label, c, st, files: page.files, next: page.nextPageToken };
+          return { label, c, st, files: [...page.files].sort(newestFirst), next: page.nextPageToken };
         })(),
         timeoutMs,
         `account ${label}`,
@@ -124,27 +141,40 @@ export async function findAcross(labels: string[], a: FindArgs, timeoutMs = FIND
     else errors.push({ account: targets[i]!, error: r.reason instanceof Error ? r.reason.message : String(r.reason) });
   });
 
-  const pool = pages.flatMap((p) => p.files.slice(p.st.s).map((f) => ({ p, f })));
-  pool.sort((x, y) => (y.f.modifiedTime ?? "").localeCompare(x.f.modifiedTime ?? ""));
+  const seen = new Set(cursor?.x ?? []);
+  const isRepeat = (p: AccountPage, f: DriveFile) => seen.has(seenKey(p.label, f.id));
+  const pool = pages.flatMap((p) => p.files.slice(p.st.s).flatMap((f) => (isRepeat(p, f) ? [] : [{ p, f }])));
+  pool.sort((x, y) => newestFirst(x.f, y.f));
   const taken = pool.slice(0, a.limit);
 
   const nextState: Record<string, AccountCursor> = {};
   const accounts: FindResult["accounts"] = [];
   for (const p of pages) {
-    const n = taken.filter((x) => x.p === p).length;
+    let n = taken.filter((x) => x.p === p).length;
     accounts.push({ account: p.label, returned: n });
-    const consumed = p.st.s + n;
+    // The items taken from a page are the newest non-repeats of its (sorted) remainder: advance past them and past
+    // any repeats in between, so a cut page resumes exactly where this call stopped.
+    let consumed = p.st.s;
+    while (consumed < p.files.length) {
+      const f = p.files[consumed]!;
+      if (isRepeat(p, f)) consumed++;
+      else if (n > 0) {
+        consumed++;
+        n--;
+      } else break;
+    }
     if (consumed < p.files.length) nextState[p.label] = { t: p.st.t, s: consumed };
     else if (p.next) nextState[p.label] = { t: p.next, s: 0 };
   }
   const hasMore = Object.keys(nextState).length > 0;
   const results = await Promise.all(taken.map((x) => toResult(x.p.c, x.f)));
+  const x = [...(cursor?.x ?? []), ...taken.map((t) => seenKey(t.p.label, t.f.id))].slice(-SEEN_CAP);
   return {
     results,
     accounts,
     errors,
     partial: errors.length > 0,
     hasMore,
-    ...(hasMore ? { nextPageToken: encodeCursor({ v: 1, p: pageSize, a: nextState }) } : {}),
+    ...(hasMore ? { nextPageToken: encodeCursor({ v: 1, p: pageSize, a: nextState, x }) } : {}),
   };
 }

@@ -252,10 +252,18 @@ describe("mail attachments", () => {
     expect(Object.keys(ro.defs.mail_read!.inputSchema.shape)).not.toContain("saveAttachmentsTo");
     expect(Object.keys(defs.mail_attachment!.inputSchema.shape)).toContain("saveTo");
     expect(Object.keys(defs.mail_read!.inputSchema.shape)).toContain("saveAttachmentsTo");
-    // Even if a saveTo slips through, the read-only handler never writes.
-    const r = await call(ro.tools, "mail_attachment", { account: "work", messageId: "a1", attachmentId: "att-a1-0", maxChars: 1000, offset: 0, saveTo: { account: "work", folderId: "co" } });
-    expect(r.isError, r.text).toBe(false);
-    expect(r.json!.text).toBe("a,b\n1,2\n3,4");
+    // A saveTo sent anyway is not stripped silently: the schema lets it through and the handler refuses it, writing nothing.
+    const args = { account: "work", messageId: "a1", attachmentId: "att-a1-0", maxChars: 1000, offset: 0, saveTo: { account: "work", folderId: "co" } };
+    expect(ro.defs.mail_attachment!.inputSchema.parse(args)).toHaveProperty("saveTo");
+    const r = await call(ro.tools, "mail_attachment", args);
+    expect(r.isError).toBe(true);
+    expect(r.text).toMatch(/saveTo needs a full-access client: this token is read-only, so nothing was saved/);
+    const rr = await call(ro.tools, "mail_read", { account: "work", messageId: "a1", maxChars: 1000, saveAttachmentsTo: { account: "work", folderId: "co" } });
+    expect(rr.isError).toBe(true);
+    expect(rr.text).toMatch(/saveAttachmentsTo needs a full-access client/);
+    const plain = await call(ro.tools, "mail_attachment", { ...args, saveTo: undefined });
+    expect(plain.isError, plain.text).toBe(false);
+    expect(plain.json!.text).toBe("a,b\n1,2\n3,4");
     expect(drive.log.filter((l) => l.method !== "GET")).toHaveLength(0);
   });
 });

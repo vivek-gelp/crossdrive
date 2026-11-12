@@ -115,6 +115,9 @@ function ageDays(iso: string): number {
   return Number.isFinite(t) ? Math.max(0, Math.floor((Date.now() - t) / 86_400_000)) : 0;
 }
 
+/** Warning when nothing is connected; /connect itself leaves it out (it lists "None yet." where the accounts go). */
+export const NO_ACCOUNTS_WARNING = "No accounts connected yet: open /connect.";
+
 export async function accountStatus(label?: string): Promise<{ accounts: AccountStatus[]; warnings: string[] }> {
   const warnings = configWarnings();
   const storage = getStore().kind;
@@ -138,7 +141,7 @@ export async function accountStatus(label?: string): Promise<{ accounts: Account
       throw new Error(`No connected account labelled "${label}" (connected: ${have}).`);
     }
   } else if (list.length === 0) {
-    warnings.push("No accounts connected yet: open /connect.");
+    warnings.push(NO_ACCOUNTS_WARNING);
   }
 
   const accounts = await Promise.all(

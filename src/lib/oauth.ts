@@ -1,4 +1,4 @@
-import type { AuthInfo } from "@modelcontextprotocol/server";
+import { OAuthError as McpOAuthError, OAuthErrorCode, type AuthInfo } from "@modelcontextprotocol/server";
 import { timingSafeEqual } from "node:crypto";
 import { baseUrl, env, jwtEnv, readonlyTokens, staticTokens } from "./config";
 import {
@@ -261,9 +261,22 @@ function matches(token: string, list: string[]): boolean {
   });
 }
 
-/** Used by withMcpAuth: JWT access tokens, full static tokens, read-only static tokens. */
+/** The 401 text for a bearer that was sent but is not valid (mcp-handler's own text says none was sent). */
+export const INVALID_BEARER = "Invalid or expired access token; sign in again (re-authorize the client)";
+
+/**
+ * Used by withMcpAuth: JWT access tokens, full static tokens, read-only static tokens. No bearer resolves undefined
+ * (mcp-handler answers 401 "No authorization provided"); a bearer that does not verify throws an invalid_token error,
+ * so the 401 says the token was bad rather than missing.
+ */
 export async function verifyBearer(_req: Request, bearer?: string): Promise<AuthInfo | undefined> {
   if (!bearer) return undefined;
+  const info = await bearerInfo(bearer);
+  if (!info) throw new McpOAuthError(OAuthErrorCode.InvalidToken, INVALID_BEARER);
+  return info;
+}
+
+async function bearerInfo(bearer: string): Promise<AuthInfo | undefined> {
   if (matches(bearer, staticTokens())) {
     return { token: bearer, clientId: "static", scopes: [SCOPE_FULL], extra: { email: "static-token" } };
   }

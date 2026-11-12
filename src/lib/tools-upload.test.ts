@@ -239,3 +239,39 @@ describe("putToSession / uploadFromUrl", () => {
     await expect(putToSession(b.fetchImpl, url, (async function* () {})(), { chunkBytes: 1000 })).rejects.toThrow(/multiple of 256 KiB/);
   });
 });
+
+describe("put with content / contentBase64 (live-test fixes)", () => {
+  let tools: Record<string, Handler>;
+  beforeEach(() => {
+    setStore(memoryStore());
+    tools = collect(registerAllTools);
+  });
+  afterEach(() => {
+    setDriveFetch(undefined);
+    setStore(undefined);
+  });
+
+  it("infers the MIME type from the extension instead of storing binaries as text/plain, and returns the auditId", async () => {
+    const b = fakeDrive(SPECS, files());
+    setDriveFetch(b.fetchImpl);
+    const base = { account: "work", folderId: "co", allowNonStandardName: false };
+    const cases: [string, Record<string, string>, string][] = [
+      ["2026-11-10_Acme_Report.pdf", { contentBase64: Buffer.from("%PDF-1.4").toString("base64") }, "application/pdf"],
+      ["2026-11-10_Acme_Sheet.xlsx", { contentBase64: "UEsDBA==" }, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+      ["2026-11-10_Acme_Letter.docx", { contentBase64: "UEsDBA==" }, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+      ["2026-11-10_Acme_Blob.bin", { contentBase64: "AAEC" }, "application/octet-stream"],
+      ["2026-11-10_Acme_Table.csv", { content: "a,b\n1,2" }, "text/csv"],
+      ["2026-11-10_Acme_Notes.txt", { content: "hi" }, "text/plain"],
+      ["2026-11-10_Acme_Image.png", { content: "not really a png" }, "text/plain"],
+    ];
+    for (const [name, body, mime] of cases) {
+      const r = await call(tools, "put", { ...base, name, ...body });
+      expect(r.isError, r.text).toBe(false);
+      expect(r.json!.mimeType, name).toBe(mime);
+      expect(r.json!.auditId, name).toMatch(/^\d{8}T\d{9}Z-[0-9a-f]{8}$/);
+    }
+    const explicit = await call(tools, "put", { ...base, name: "2026-11-10_Acme_X.pdf", contentBase64: "AAEC", mimeType: "application/x-custom" });
+    expect(explicit.json!.mimeType).toBe("application/x-custom");
+    expect((await readAudit(1))[0]!.id).toBe(explicit.json!.auditId);
+  });
+});

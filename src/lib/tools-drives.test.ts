@@ -77,7 +77,8 @@ describe("Shared Drives in the tools", () => {
     setDriveFetch(fakeDrive([{ label: "work", email: WORK }, { label: "personal", email: PERSONAL }], files()).fetchImpl);
     const r = await call(tools, "drives", { account: "personal" });
     expect(r.isError, r.text).toBe(false);
-    expect(r.json).toEqual({ account: "personal", drives: [] });
+    // personal is a consumer (gmail.com) account: Google answers with an empty list, and the promised note is there.
+    expect(r.json).toEqual({ account: "personal", drives: [], note: "This is a consumer Google account; consumer accounts have no Shared Drives." });
   });
 
   it("list and find work inside a Shared Drive via label:drive/<name>/... paths", async () => {

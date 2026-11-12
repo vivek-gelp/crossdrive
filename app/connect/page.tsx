@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { dropboxConfigured, env, googleClientProblem, microsoftConfigured } from "@/lib/config";
 import { csrfToken } from "@/lib/csrf";
 import { ADMIN_COOKIE, adminEmail } from "@/lib/http";
-import { accountStatus, type AccountStatus } from "@/lib/status";
+import { accountStatus, NO_ACCOUNTS_WARNING, type AccountStatus } from "@/lib/status";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -148,7 +148,9 @@ export default async function ConnectPage({ searchParams }: { searchParams: Prom
 
   const session = (await cookies()).get(ADMIN_COOKIE)?.value ?? "";
   const csrf = csrfToken(session, env("JWT_SECRET") ?? "");
-  const { accounts, warnings } = await accountStatus();
+  const status = await accountStatus();
+  const accounts = status.accounts;
+  const warnings = status.warnings.filter((w) => w !== NO_ACCOUNTS_WARNING);
   const ms = microsoftConfigured();
   const dbx = dropboxConfigured();
 

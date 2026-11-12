@@ -110,7 +110,15 @@ export interface MailReadToolOpts {
   allowSave: boolean;
 }
 
-/** mail_read arguments; the read-only server omits saveAttachmentsTo (zod strips it if sent). */
+/**
+ * On a read-only token the saving arguments are not advertised. The schemas are loose there, so a client that sends
+ * them anyway reaches the handler with them (instead of zod stripping them silently) and gets an explicit refusal.
+ */
+export function readOnlySaveRefusal(arg: string): Error {
+  return new Error(`${arg} needs a full-access client: this token is read-only, so nothing was saved. Call again without ${arg} to read the content.`);
+}
+
+/** mail_read arguments; the read-only server omits saveAttachmentsTo (and refuses it if sent). */
 const readShapeFor = ({ saveAttachmentsTo }: SaveSchemas) => {
   const readOnly = {
     account: label,
@@ -125,6 +133,8 @@ export function registerMailReadTools(server: McpServer, opts: MailReadToolOpts 
   const schemas = saveSchemas();
   const { saveTo } = schemas;
   const readShape = readShapeFor(schemas);
+  /** Read-only tokens: unadvertised saving arguments reach the handler (and are refused) instead of being stripped. */
+  const looseUnlessSaving = <T extends z.ZodObject>(schema: T): T => (opts.allowSave ? schema : (schema.loose() as unknown as T));
   server.registerTool(
     "mail_search",
     {
@@ -165,11 +175,12 @@ export function registerMailReadTools(server: McpServer, opts: MailReadToolOpts 
         "Read one message (messageId) or a whole thread (threadId, all messages oldest first). Each message has from/to/cc/date/subject, the body as plain text " +
         "(text/plain preferred, else HTML rendered to text; never raw HTML, cut at maxChars per message with bodyTruncated=true) and attachment metadata (filename, mimeType, size, partId, index; " +
         "pass partId or index to mail_attachment, they are stable, Gmail's attachmentId is not).",
-      inputSchema: z.object(opts.allowSave ? readShape.full : (readShape.readOnly as typeof readShape.full)),
+      inputSchema: opts.allowSave ? z.object(readShape.full) : (z.object(readShape.readOnly).loose() as unknown as z.ZodObject<typeof readShape.full>),
       annotations: opts.allowSave ? { destructiveHint: false, idempotentHint: true } : { readOnlyHint: true },
     },
     wrap(async (a: { account: string; messageId?: string; threadId?: string; maxChars: number; saveAttachmentsTo?: SaveTarget }, ctx) => {
       if (!a.messageId === !a.threadId) throw new Error("Give exactly one of messageId or threadId");
+      if (!opts.allowSave && a.saveAttachmentsTo !== undefined) throw readOnlySaveRefusal("saveAttachmentsTo");
       const c = await mailCtxFor(a.account);
       let threadId: string;
       let messages: ParsedMessage[];
@@ -198,7 +209,7 @@ export function registerMailReadTools(server: McpServer, opts: MailReadToolOpts 
         (opts.allowSave
           ? "With saveTo {account, path|folderId, name?, allowNonStandardName?} the bytes are stored as a new Drive file in that account (multipart up to 5 MB, resumable above) and the file is returned; audit-logged."
           : "Saving to Drive needs a full-access token."),
-      inputSchema: z.object({
+      inputSchema: looseUnlessSaving(z.object({
         account: label,
         messageId: z.string().min(1),
         partId: z.string().min(1).optional().describe("Stable selector: partId from mail_read"),
@@ -218,10 +229,11 @@ export function registerMailReadTools(server: McpServer, opts: MailReadToolOpts 
         maxChars: z.ZodDefault<z.ZodNumber>;
         offset: z.ZodDefault<z.ZodNumber>;
         saveTo: typeof saveTo;
-      }),
+      })),
       annotations: opts.allowSave ? { destructiveHint: false } : { readOnlyHint: true },
     },
     wrap(async (a: { account: string; messageId: string; partId?: string; index?: number; filename?: string; attachmentId?: string; maxChars: number; offset: number; saveTo?: SaveTarget }, ctx) => {
+      if (!opts.allowSave && a.saveTo !== undefined) throw readOnlySaveRefusal("saveTo");
       const c = await mailCtxFor(a.account);
       const info: AttachmentInfo = await attachmentInfo(c, a.messageId, { partId: a.partId, index: a.index, filename: a.filename, attachmentId: a.attachmentId });
       const bytes = await downloadAttachment(c, a.messageId, info);

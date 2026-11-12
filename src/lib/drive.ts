@@ -13,7 +13,7 @@ import { fetchWithRetry, isIdempotentMethod } from "./retry";
 export const FOLDER_MIME = "application/vnd.google-apps.folder";
 export const SHORTCUT_MIME = "application/vnd.google-apps.shortcut";
 export const FILE_FIELDS =
-  "id,name,mimeType,modifiedTime,size,md5Checksum,webViewLink,parents,trashed,owners(emailAddress),capabilities(canEdit,canAddChildren,canShare),shared,driveId,shortcutDetails(targetId,targetMimeType)";
+  "id,name,mimeType,modifiedTime,size,md5Checksum,webViewLink,parents,trashed,owners(emailAddress),ownedByMe,capabilities(canEdit,canAddChildren,canShare),shared,driveId,shortcutDetails(targetId,targetMimeType)";
 export const PERMISSION_FIELDS = "id,type,role,emailAddress,displayName,pendingOwner";
 
 export interface DriveFile {
@@ -28,6 +28,8 @@ export interface DriveFile {
   trashed?: boolean;
   /** Absent for Shared Drive items; owners[0] is the owner for My Drive / shared-with-me items. */
   owners?: { emailAddress?: string }[];
+  /** Whether the connected account owns the item; lets us tell "owner hidden by Drive" from "mine" when owners is absent. */
+  ownedByMe?: boolean;
   capabilities?: { canEdit?: boolean; canAddChildren?: boolean; canShare?: boolean };
   /** True when the file has been shared with anyone (set by Drive, not by us). */
   shared?: boolean;
