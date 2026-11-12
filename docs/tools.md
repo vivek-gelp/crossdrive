@@ -13,13 +13,18 @@ that points to the `cloud_*` tools and `transfer`.
 ## Addressing
 
 - `label:/Folder/Sub` walks My Drive from the root of the account called `label`.
+- Tools that take an `account` argument (`list`, `tree`, `mkdir`, `put`, `move`, ...) need it even when the path names
+  the label: `list {account: "personal", path: "/Folder"}` or `path: "personal:/Folder"` (the label in the path must
+  then match `account`). `find` (optional `account`) also scopes itself to the label named in its `path`.
 - `label:~shared/Top Folder/Sub` starts at a folder shared with that account (matched by exact name).
 - `label:drive/Shared Drive Name/Sub` starts at a Shared Drive (see `drives`).
 - Files can also be addressed by `fileId`.
 - Labels match `^[a-z][a-z0-9-]{0,23}$`. Names are folder and file names only.
 
-Every Drive result carries `path`, `owner` (an email or `me`), `shared` (owned by someone else) and `canEdit`. File and
-mail content in results is wrapped and labelled as untrusted data.
+Every Drive result carries `path`, `owner` (an email, `me`, or `unknown` when Drive withholds the owner of an item
+shared with the account), `shared` (owned by someone else) and `canEdit`. Shared Drive items count as `me`. File and
+mail content in results is wrapped and labelled as untrusted data. `mkdir`, `put`, `move`, `rename`, `trash` and `untrash`
+return the `auditId` of their audit entry (the id `undo` takes).
 
 ## Accounts and health
 
@@ -27,29 +32,29 @@ mail content in results is wrapped and labelled as untrusted data.
 |---|---|---|
 | `accounts` | read | Connected accounts: label, provider, email, storage used and quota (Google), Gmail granted, mode (read-only or write), mail mode. OneDrive and Dropbox accounts are listed with a note instead of storage |
 | `status` | read | Per account: whether a live token refresh works (or its error), granted scopes, provider, mode, mail mode, connection age; plus configuration warnings |
-| `drives` | read | Shared Drives an account belongs to, each with its `label:drive/<name>` path |
+| `drives` | read | Shared Drives an account belongs to, each with its `label:drive/<name>` path. A consumer (gmail.com) account returns an empty list with a note |
 
 ## Finding and browsing
 
 | Tool | Access | Description |
 |---|---|---|
-| `find` | read | Name and full-text search across all Google accounts or one, newest first, 20 s timeout per account. Returns per-account errors and `partial: true` if any account failed or timed out; supports paging. OneDrive and Dropbox accounts are skipped and listed under `skipped` (use `cloud_find`). Options include `includeShared`, `foldersOnly` and scoping by `path` or `folderId` |
+| `find` | read | Name and full-text search across all Google accounts or one, 20 s timeout per account. Each page is sorted newest first; Drive returns full-text matches in relevance order, so a later page can hold newer items than an earlier one. Paging with `pageToken` never returns an item twice. Returns per-account errors and `partial: true` if any account failed or timed out. OneDrive and Dropbox accounts are skipped and listed under `skipped` (use `cloud_find`). Options include `includeShared`, `foldersOnly` and scoping by `path` or `folderId` |
 | `list` | read | One level of a folder; works for shared folders and Shared Drives; `label:~shared` lists everything shared |
 | `tree` | read | A folder tree to a given depth with counts, sizes and dates |
 | `shared` | read | Items other people shared with the account, newest first |
-| `read` | read | File content as text: Docs, Sheets and Slides exported; PDF, docx, xlsx and text extracted. A scanned PDF without a text layer returns `content: null` with a note. Paged with `offset` and `maxChars` |
+| `read` | read | File content as text: Docs, Sheets and Slides exported; PDF, docx, xlsx and text extracted. An xlsx returns its first sheet (or `sheet`) and lists all sheet names in `sheets`. A scanned PDF without a text layer returns `content: null` with a note. Paged with `offset` and `maxChars` |
 | `inbox` | read | Loose files in the root of each drive plus the configured inbox folder |
 | `permissions` | read | Who has access to a file: email, role, type, pending owner |
-| `duplicates` | read | Duplicate groups by hash or name and size, within one account or across accounts, sorted by wasted bytes, with a suggested keeper |
+| `duplicates` | read | Duplicate groups by hash or name and size, within one account (optionally under `path` or `folderId`) or, with `acrossAccounts`, across whole accounts (`account`, `path` and `folderId` are then ignored), sorted by wasted bytes, with a suggested keeper |
 | `changes` | read | Files modified since `24h`, `7d` or a date, across accounts, newest first |
-| `audit` | read | Recent write-log entries; `batchId` groups the entries of one batch |
+| `audit` | read | Recent write-log entries, newest first (last 60 days, or one `date`); `batchId` groups the entries of one batch |
 
 ## Writing files
 
 | Tool | Access | Description |
 |---|---|---|
 | `mkdir` | write | Create a folder; idempotent |
-| `put` | write | Upload small text or base64 content, or stream an https `sourceUrl` into Drive server-side (200 MB cap). Defaults to the inbox folder |
+| `put` | write | Upload small text or base64 content, or stream an https `sourceUrl` into Drive server-side (200 MB cap). Without `mimeType` the type comes from the file extension (`sourceUrl`: the server's Content-Type). Defaults to the inbox folder, which is created at the root of My Drive when missing |
 | `upload_begin` | write | Validates the name and access and returns a pre-authorised Drive resumable-upload URL; the client sends the bytes straight to Google |
 | `upload_finish` | write | Fetches the finished file's metadata and writes the audit entry |
 | `move` | write | Move a file or folder within one account |
@@ -76,8 +81,8 @@ decides which of them work.
 | Tool | Access | Description |
 |---|---|---|
 | `mail_search` | read | Gmail search syntax (`from:`, `subject:`, `has:attachment`, `is:unread`, `newer_than:7d`); threads newest first; paged |
-| `mail_read` | read | One message or a whole thread; bodies as plain text, never raw HTML; attachment metadata. `saveAttachmentsTo` (full access only) saves attachments to Drive |
-| `mail_attachment` | read | One attachment, selected by `messageId` plus `partId`, `index` or `filename`: text for PDF, docx, xlsx, csv and txt, or saved to Drive with `saveTo` (full access only) |
+| `mail_read` | read (write with `saveAttachmentsTo`) | One message or a whole thread; bodies as plain text, never raw HTML; attachment metadata. `saveAttachmentsTo` (full access only) saves attachments to Drive; a read-only token that sends it gets an error and nothing is saved. Advertised with `readOnlyHint` only to read-only tokens |
+| `mail_attachment` | read (write with `saveTo`) | One attachment, selected by `messageId` plus `partId`, `index` or `filename`: text for PDF, docx, xlsx, csv and txt, or saved to Drive with `saveTo` (full access only; refused with an error on a read-only token). Advertised with `readOnlyHint` only to read-only tokens |
 | `mail_labels` | read | All labels with ids and unread counts |
 | `mail_draft` | write | Create a draft; nothing is sent. Supports reply threading and Drive attachments (20 MB total) |
 | `mail_send` | write | Send a draft or a new message. Requires mail mode `send` and, if configured, an allowed recipient |

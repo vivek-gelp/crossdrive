@@ -41,7 +41,19 @@ trust.
 Because several MCP clients (phone app, desktop, a script) can authenticate through one Google OAuth client, the MCP
 specification requires per-client consent. Crossdrive shows a consent screen for each client that registers through
 dynamic client registration, naming the client and the redirect host, and lets you downgrade that client to read-only.
-Authorization codes are bound to the registered redirect URI and require PKCE (S256).
+Authorization codes are bound to the registered redirect URI, require PKCE (S256), live 5 minutes and are single-use:
+the first redemption records the code's id in the Blob store with create-if-absent semantics and a second one gets
+`invalid_grant`. Without a Blob store (in-memory development mode) that record is per server instance only.
+
+The Approve form is protected against cross-site request forgery without relying on the `Origin` header alone (browsers
+send `Origin: null` or none in several cases): showing the page sets a random value in an HttpOnly, SameSite=Lax cookie
+scoped to `/oauth/consent`, the signed consent token carries its SHA-256, and the POST must present both. A request
+naming a foreign origin, or marked `Sec-Fetch-Site: cross-site`, is refused regardless, and each consent screen can be
+answered once.
+
+Refresh tokens are not rotated: they are stateless JWTs that one client may use from several processes at once, and
+rotation with reuse detection would make all but one of those concurrent refreshes fail. A leaked refresh token stays
+valid until it expires (90 days) or `CROSSDRIVE_JWT_SECRET` is rotated.
 
 ### Token theft
 
@@ -68,7 +80,9 @@ Agents have deleted data they were told to leave alone. The rule is that safety 
 
 - No permanent delete exists: trash is the only delete, for Drive (`trashed`) and Gmail (`TRASH` label). `unshare`
   removes a permission, never a file.
-- Per-account read-only mode refuses writes before Google is called.
+- Per-account read-only mode refuses writes before Google is called. Write tools read the account's mode and mail
+  mode fresh from storage on every call (not from a per-instance cache), so a change on the connect page applies to the
+  next call on every serverless instance.
 - Most write tools accept `dryRun` (the full list is in [tools.md](tools.md)); `batch` and `transfer` preview by
   default, and `batch` reports mutation counts, so one approval covers a whole plan.
 - `undo` reverses moves, renames, trashes and untrashes using the audit log.

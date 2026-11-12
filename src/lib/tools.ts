@@ -168,7 +168,7 @@ export function registerReadTools(rawServer: McpServer, opts: RegisterOpts = { f
     {
       title: "Find files and folders",
       description:
-        "Full-text + name search across all (or one) connected drives, in parallel, merged newest first. Returns folders as well as files, " +
+        "Full-text + name search across all (or one) connected drives, in parallel; each page is sorted newest first (Drive returns full-text matches by relevance, so later pages can hold newer items) and paging never repeats an item. Returns folders as well as files, " +
         `items shared with the account and items in Shared Drives (owner/shared/canEdit on each result). Scope with path (label:/A, label:${SHARED_PREFIX}/Top/A or label:${DRIVE_PREFIX}/<Drive>/A) or folderId. ` +
         "An account that fails or does not answer within 20 s is listed in errors and partial=true; the other accounts' results are still returned. " +
         "hasMore=true means more results exist: call again with the same arguments plus pageToken=nextPageToken.",

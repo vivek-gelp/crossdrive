@@ -2,7 +2,50 @@
 
 ## 1.0.1 (2026-11-12)
 
-Fixes for traps found in a first real deployment. No environment variable or redirect URI changes are required.
+Fixes for traps found in a first real deployment and in the first live acceptance test. No environment variable or
+redirect URI changes are required.
+
+**Upgrade if you run 1.0.0:** its consent screen could not be approved in Chrome (and probably other Chromium
+browsers). Clicking Approve always ended on "Consent must be given from this site.", so no OAuth client (Claude, Claude
+Code, ChatGPT) could connect; only static bearer tokens worked. 1.0.1 fixes this.
+
+Security and correctness:
+
+- Consent screen: the page sent `Referrer-Policy: no-referrer`, which makes Chrome send `Origin: null` on the form
+  POST, and the server refused that. The page now uses `strict-origin`, and the approval no longer depends on the
+  `Origin` header alone: showing the page sets a short-lived, HttpOnly, SameSite=Lax cookie that the signed consent
+  token is bound to, and Approve needs both. A request from another site is still refused, and each consent screen can
+  be answered only once. Approve in the same browser that showed the screen, with cookies enabled for the site.
+- The connect page's form check had the same weakness (`Origin: null` refused); it now relies on its session-bound
+  token in that case and still refuses other sites.
+- Read-only mode, mail mode and disconnects apply at once. In 1.0.0 each server instance cached the account list for up
+  to 60 seconds, so a write could still go through on an account that had just been switched to read-only (seen in the
+  test: a folder was created). Every write now reads the account's mode fresh.
+- Authorization codes can be redeemed only once; a second redemption gets `invalid_grant`. Refresh tokens are
+  unchanged (not rotated), so one client can still refresh from several processes at once.
+
+Fixes:
+
+- `audit` took about 55 seconds on a young log (a client could time out); it now lists the days that have entries once instead of
+  probing all 60 days one by one, and stops once it has enough entries. Old per-day log files are still read.
+- `put` with `contentBase64` and no `mimeType` stored PDFs and Office files as `text/plain`; the type now comes from the
+  file extension. `put` also returns its `auditId`.
+- `find` no longer returns an item twice across pages, and each page is sorted newest first. Drive returns full-text
+  matches in relevance order, so pages are not in date order across each other (now documented).
+- `drives` on a consumer Gmail account returns the promised note with its empty list.
+- Items whose owner Drive does not reveal were reported as yours (`owner: "me"`, `shared: false`); they are now
+  `owner: "unknown"`, `shared: true`.
+- A read-only client that asks `mail_read` / `mail_attachment` to save to Drive gets a clear error instead of having the
+  request silently ignored.
+- An invalid or expired bearer token gets "Invalid or expired access token" instead of "No authorization provided".
+- The consent screen is styled (the page's security policy had blocked the site stylesheet).
+- `/connect` no longer tells you to open `/connect` when no account is connected.
+- `read` on an xlsx lists the workbook's sheet names.
+- Docs: the audit log stores mail recipients and subjects; tools that take `account` need it even with a labelled path;
+  `duplicates` with `acrossAccounts` ignores `path`; connecting several Google accounts needs each signed in to the
+  browser.
+
+Earlier in 1.0.1:
 
 - `CROSSDRIVE_BASE_URL` is optional on Vercel: when it is unset, Crossdrive uses Vercel's production domain
   (`VERCEL_PROJECT_PRODUCTION_URL`), so the first deploy no longer needs a second deploy to set it. An explicit value

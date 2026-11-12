@@ -31,7 +31,7 @@ the only delete, mail is draft-only by default, every write is audited, and each
 |---|---|
 | **Scopes requested** | Drive (`drive`) and Gmail (`gmail.modify`, `gmail.compose`, `gmail.send`), per account, from your own Google Cloud project. No scope that permits permanent deletion is requested. |
 | **Where tokens live** | Refresh tokens are encrypted with AES-256-GCM and stored in a private Vercel Blob store in your own Vercel account. The key is an environment variable only you hold. |
-| **What is logged** | Every completed write: tool, account, affected item, actor. Never file contents, mail bodies or tokens. The log is append-only and readable through the `audit` tool. |
+| **What is logged** | Every completed write: tool, account, affected item, actor. Mail entries also record the recipients, the subject and attachment file names. Never file contents, mail bodies or tokens. The log is append-only and readable through the `audit` tool. |
 | **Defaults** | No permanent delete (trash only). Mail is draft-only for new accounts. Any account can be switched to read-only on the connect page. A "disconnect everything" button revokes every token and works from a phone. |
 
 ## Deploy to Vercel
@@ -59,7 +59,9 @@ button creates a copy of the repo and needs a new name.
    `<your URL>/oauth/google-callback`.
 4. **Connect your accounts** at `<your URL>/connect`: pick a label (for example `work`, `personal`, `clientco`) and sign
    in with that Google account. New accounts start as read + write with mail as drafts only; switch an account to
-   read-only or change its mail mode on its card. Repeat for each account.
+   read-only or change its mail mode on its card. Repeat for each account. Google signs you in with the browser's own
+   Google session: to connect several accounts, sign each of them in to the browser first (or be ready for Google to ask
+   for that account's password).
 5. **Add the connector to your AI client** using `<your URL>/api/mcp` ([details below](#connecting-clients)), then ask:
    "search all my drives for the 2026 lease".
 
@@ -109,7 +111,10 @@ Google. `scripts/bulk-upload.mjs` mirrors a local folder into a drive with skip-
 it (which revokes the token at Google) or disconnect everything, from any browser.
 
 **Per-client consent.** Each MCP client that connects sees a consent screen naming the client and its redirect host, and
-can be downgraded to read-only. This is the MCP specification's answer to the confused-deputy problem.
+can be downgraded to read-only. This is the MCP specification's answer to the confused-deputy problem. The approval is
+bound to the browser that was shown the screen (a short-lived cookie), so approve in the same browser, with cookies
+enabled for your Crossdrive site. (In 1.0.0 the Approve button failed in Chrome with "Consent must be given from this
+site"; fixed in 1.0.1.)
 
 **BETA: OneDrive and Dropbox.** Microsoft Graph and Dropbox accounts can sit under the same labels. `transfer` copies or
 moves files and folder trees between any two accounts across providers, resumable and verified by size or hash, with the
@@ -162,14 +167,16 @@ Safety is enforced by the server, not requested of the model. Annotations such a
 are never relied on.
 
 - **No permanent delete.** No tool exists for it and no Gmail scope that allows it is requested. Trash is recoverable.
-- **Read-only accounts** cannot reach a write tool at all: the tool is refused in code before Google is called.
+- **Read-only accounts** cannot reach a write tool at all: the tool is refused in code before Google is called. Every
+  write reads the account's mode and mail mode fresh from storage, so a switch on the connect page (or a disconnect)
+  applies to the very next call on every server instance.
 - **Mail modes** per account: `off`, `draft` or `send`. New accounts start at `draft`. Send can be restricted with
   `CROSSDRIVE_MAIL_ALLOWED_RECIPIENTS`. The sender is never inferred.
 - **Untrusted content.** File and mail content is returned wrapped and labelled as data, URLs found inside documents are
   never fetched, and no forwarding filters can be created.
 - **Dry run and undo.** Most write tools accept `dryRun` ([which ones](docs/tools.md)); `batch` and `transfer` preview by
   default; `undo` reverses moves, renames, trashes and untrashes.
-- **Audit.** Append-only, actions only, never bodies or tokens.
+- **Audit.** Append-only, actions only, never bodies or tokens (mail entries carry recipients and subject).
 - **Revocation.** Disconnect an account (token revoked at Google or Dropbox; Microsoft offers no per-token revoke) or
   everything, from the connect page.
 - **Tokens.** Encrypted at rest; read-only static tokens for scripts; OAuth artefacts are signed JWTs, so rotating
@@ -200,8 +207,8 @@ Because you create the OAuth client in your own Google Cloud project, Google tre
 Your MCP endpoint is `<your URL>/api/mcp`.
 
 - **Claude on the web, desktop and phone:** Settings, Connectors, Add custom connector, paste the URL. Claude discovers
-  the OAuth server, shows you Crossdrive's consent screen and signs you in with an allowed email. Add the connector on
-  the web or desktop app; it is then available in the phone app.
+  the OAuth server, signs you in with an allowed email and shows you Crossdrive's consent screen; click Approve. Add the
+  connector on the web or desktop app; it is then available in the phone app.
 - **Claude Code:**
 
   ```bash
