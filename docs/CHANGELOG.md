@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Docs: the "Do you need this?" section in the README and on the landing page now opens with when you need
+  Crossdrive (your assistant has no multi-account option yet, or you want more than three accounts) instead of
+  "Perhaps not".
 - Docs: repositioned the README, landing page and launch texts. The old headline ("Claude's Drive connector sees one
   Google account. Crossdrive sees all of them") is gone, because as of mid-November 2026 there are user reports
   (unconfirmed by Anthropic's documentation) that the built-in Gmail and Drive connectors are gaining several accounts.

@@ -25,10 +25,11 @@ const WHAT = [
 ];
 
 const NEED = [
-  "Rules per account, enforced on the server: read-only accounts, mail off, draft or send per account, trash-only delete, dry run, undo and an audit log.",
-  "Work between accounts: copy or move files and folder trees, find duplicates across accounts, one search that names any account that failed.",
-  "Your own hosting, not tied to one AI vendor: tokens in your own storage, and any MCP client can connect (only the Claude desktop app verified so far).",
-  "OneDrive or Dropbox beside Google (beta, not yet tested on live accounts).",
+  "Your AI assistant does not let you connect several accounts. Claude is rolling out support for more than one Gmail and Drive account slowly, so many people do not have it yet; ChatGPT and other assistants may not offer it at all. Crossdrive works today, in any MCP client.",
+  "You want to connect more than three accounts. There is no fixed limit: connect every Google account you use, each under its own label, plus OneDrive or Dropbox (beta, not yet tested on live accounts).",
+  "You want rules per account, enforced on the server: read-only accounts, mail off, draft or send per account, trash-only delete, dry run, undo and an audit log.",
+  "You want to work between accounts: copy or move files and folder trees, find duplicates across accounts, one search that names any account that failed.",
+  "You want your own hosting, not tied to one AI vendor: tokens in your own storage, and any MCP client can connect (only the Claude desktop app verified so far).",
 ];
 
 const SAFETY = [
@@ -114,18 +115,16 @@ export default function Home() {
 
       <section className="card stack">
         <h2 style={{ margin: 0 }}>Do you need this?</h2>
-        <p>
-          Perhaps not. As of mid-November 2026 there are user reports (one Reddit thread) that Claude&apos;s built-in
-          Gmail and Drive connectors are gaining support for several accounts in a gradual rollout. We could not
-          confirm this from Anthropic&apos;s documentation or test it ourselves. If you have it, and you only need to
-          read and draft across a few Google accounts inside Claude, use it: it needs no setup.
-        </p>
-        <p style={{ margin: 0 }}>Crossdrive is for when you want:</p>
+        <p style={{ margin: 0 }}>You need Crossdrive if any of these is true:</p>
         <ul style={{ margin: 0 }}>
           {NEED.map((n) => (
             <li key={n}>{n}</li>
           ))}
         </ul>
+        <p style={{ margin: 0 }}>
+          If your assistant already lets you connect all your accounts, and you only need to read and draft across a
+          few of them, the built-in connector is simpler: it needs no setup.
+        </p>
       </section>
 
       <section>
