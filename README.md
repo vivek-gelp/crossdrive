@@ -26,20 +26,22 @@ the Claude desktop app has been verified as a client.
 
 ## Do you need this?
 
-Perhaps not. As of mid-November 2026 there are user reports (one Reddit thread) that Claude's built-in Gmail and Drive
-connectors are gaining support for several accounts in a gradual rollout. We could not confirm this from Anthropic's
-documentation, which describes one connected account (checked 12 November 2026), or test it ourselves. If you have it,
-and you only need to read and draft across a few Google accounts inside Claude, use it: it needs no setup.
+You need Crossdrive if any of these is true:
 
-Crossdrive is for when you want one or more of these:
+- **Your AI assistant does not let you connect several accounts.** Claude is rolling out support for more than one
+  Gmail and Drive account slowly, so many people do not have it yet. ChatGPT and other assistants may not offer it at
+  all. Crossdrive works today, in any MCP client.
+- **You want to connect more than three accounts.** Crossdrive has no fixed limit: connect every Google account you
+  use, each under its own label, plus OneDrive or Dropbox (beta, not yet tested on live accounts).
+- **You want rules per account, enforced on the server:** read-only accounts, mail off, draft or send per account,
+  trash-only delete, dry run, undo and an audit log.
+- **You want to work between accounts:** copy or move files and folder trees, find duplicates across accounts, and run
+  one search that names any account that failed.
+- **You want your own hosting, not tied to one AI vendor:** tokens stay in your own storage, and any MCP client can
+  connect (only the Claude desktop app has been verified so far).
 
-- **Rules per account, enforced on the server:** read-only accounts, mail off, draft or send per account, trash-only
-  delete, dry run, undo and an audit log.
-- **Work between accounts:** copy or move files and folder trees, find duplicates across accounts, one search that names
-  any account that failed.
-- **Your own hosting, not tied to one AI vendor:** tokens in your own storage, and any MCP client can connect (only
-  the Claude desktop app has been verified so far).
-- **OneDrive or Dropbox beside Google** (beta, not yet tested on live accounts).
+If your assistant already lets you connect all your accounts, and you only need to read and draft across a few of them,
+the built-in connector is simpler: it needs no setup.
 
 If you do not have it yet, [Several Google accounts with an AI assistant: the built-in options, and when you still need more](https://vivek-gelp.github.io/crossdrive/blog/several-google-accounts-with-claude.html)
 compares the other ways, including ones that need no new software.
