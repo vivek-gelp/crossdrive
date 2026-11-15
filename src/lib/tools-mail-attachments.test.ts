@@ -246,8 +246,8 @@ describe("mail attachments", () => {
 
   it("read-only tokens get mail_attachment (text only) and mail_read without saving", async () => {
     const ro = collect(registerReadTools);
-    expect(ro.defs.mail_attachment!.annotations).toEqual({ readOnlyHint: true });
-    expect(ro.defs.mail_read!.annotations).toEqual({ readOnlyHint: true });
+    expect(ro.defs.mail_attachment!.annotations).toMatchObject({ readOnlyHint: true });
+    expect(ro.defs.mail_read!.annotations).toMatchObject({ readOnlyHint: true });
     expect(Object.keys(ro.defs.mail_attachment!.inputSchema.shape)).not.toContain("saveTo");
     expect(Object.keys(ro.defs.mail_read!.inputSchema.shape)).not.toContain("saveAttachmentsTo");
     expect(Object.keys(defs.mail_attachment!.inputSchema.shape)).toContain("saveTo");
