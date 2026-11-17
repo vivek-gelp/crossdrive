@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.4.0",
-    "@vercel/blob": "^2.8.2",
+    "@vercel/blob": "^2.9.0",
     "jose": "^6.2.16",
     "mammoth": "^1.13.0",
     "mcp-handler": "^2.3.1",
