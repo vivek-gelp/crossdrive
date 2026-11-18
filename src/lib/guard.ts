@@ -74,12 +74,35 @@ function strictInputs(def: unknown): unknown {
   return { ...d, inputSchema: strictDeep(d.inputSchema) };
 }
 
+export type ToolHints = { readOnlyHint: boolean; destructiveHint: boolean; idempotentHint: boolean; openWorldHint: boolean };
+
+/**
+ * Every tool states all four MCP annotation hints explicitly (directories such as OpenAI's require them). Unset hints
+ * get the honest default: reads are idempotent and never destructive; tools talk to provider APIs, so open-world.
+ * Advisory only: safety is enforced in code, never by these hints.
+ */
+export function completeHints(given: Partial<ToolHints> = {}): ToolHints {
+  const readOnlyHint = given.readOnlyHint ?? false;
+  return {
+    readOnlyHint,
+    destructiveHint: readOnlyHint ? false : (given.destructiveHint ?? true),
+    idempotentHint: given.idempotentHint ?? readOnlyHint,
+    openWorldHint: given.openWorldHint ?? true,
+  };
+}
+
+function withHints(def: unknown): unknown {
+  const d = def as { annotations?: Partial<ToolHints> } | undefined;
+  if (!d) return def;
+  return { ...d, annotations: { ...d.annotations, ...completeHints(d.annotations) } };
+}
+
 export function withResultGuard(server: McpServer): McpServer {
   return new Proxy(server, {
     get(target, prop) {
       if (prop === "registerTool") {
         return (name: string, def: unknown, handler: (...args: unknown[]) => Promise<TextResult>) =>
-          (target.registerTool as unknown as (n: string, d: unknown, h: (...args: unknown[]) => Promise<TextResult>) => unknown)(name, strictInputs(def), async (...args: unknown[]) =>
+          (target.registerTool as unknown as (n: string, d: unknown, h: (...args: unknown[]) => Promise<TextResult>) => unknown)(name, withHints(strictInputs(def)), async (...args: unknown[]) =>
             guardResult(name, await handler(...args)),
           );
       }

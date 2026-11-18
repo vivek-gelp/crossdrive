@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Every tool now states all four MCP annotation hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`,
+  `openWorldHint`) explicitly, filled in one place when tools are registered; directories such as OpenAI's require
+  them. Reads are idempotent and never destructive, `audit` is closed-world, everything else talks to provider APIs.
+  The hints stay advisory: safety is still enforced in code.
 - Docs: the "Do you need this?" section in the README and on the landing page now opens with when you need
   Crossdrive (your assistant has no multi-account option yet, or you want more than three accounts) instead of
   "Perhaps not".

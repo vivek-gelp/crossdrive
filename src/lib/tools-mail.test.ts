@@ -95,14 +95,14 @@ describe("mail tools", () => {
 
   describe("registration", () => {
     it("registers the eight mail tools with honest annotations", () => {
-      for (const t of ["mail_search", "mail_labels"]) expect(defs[t]!.annotations).toEqual({ readOnlyHint: true });
+      for (const t of ["mail_search", "mail_labels"]) expect(defs[t]!.annotations).toMatchObject({ readOnlyHint: true });
       // On the full server mail_read and mail_attachment can save attachments to Drive, so they are not read-only there.
-      for (const t of ["mail_read", "mail_attachment", "mail_draft", "mail_send", "mail_reply", "mail_label"]) expect(defs[t]!.annotations?.readOnlyHint).toBeUndefined();
+      for (const t of ["mail_read", "mail_attachment", "mail_draft", "mail_send", "mail_reply", "mail_label"]) expect(defs[t]!.annotations?.readOnlyHint).toBe(false);
     });
     it("gives a read-only token mail_search, mail_read, mail_attachment and mail_labels, all read-only", () => {
       const ro = collect(registerReadTools);
       expect(Object.keys(ro.tools).filter((n) => n.startsWith("mail_")).sort()).toEqual(["mail_attachment", "mail_labels", "mail_read", "mail_search"]);
-      for (const t of ["mail_search", "mail_read", "mail_attachment", "mail_labels"]) expect(ro.defs[t]!.annotations).toEqual({ readOnlyHint: true });
+      for (const t of ["mail_search", "mail_read", "mail_attachment", "mail_labels"]) expect(ro.defs[t]!.annotations).toMatchObject({ readOnlyHint: true });
     });
     it("validates arguments: account required, addresses well-formed, limit capped", () => {
       const s = defs.mail_send!.inputSchema;

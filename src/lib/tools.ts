@@ -444,7 +444,7 @@ export function registerReadTools(rawServer: McpServer, opts: RegisterOpts = { f
         limit: z.number().int().min(1).max(500).default(50),
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       }),
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, openWorldHint: false },
     },
     wrap(async (a) => ({ entries: await readAudit(a.limit, a.date) })),
   );
