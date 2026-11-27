@@ -11,6 +11,8 @@
   <a href="https://github.com/vivek-gelp/crossdrive/actions/workflows/ci.yml"><img src="https://github.com/vivek-gelp/crossdrive/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT licence"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-remote%20server-5b4bdb.svg" alt="MCP remote server"></a>
+  <a href="https://glama.ai/mcp/servers/vivek-gelp/crossdrive"><img src="https://glama.ai/mcp/servers/vivek-gelp/crossdrive/badges/score.svg" alt="vivek-gelp/crossdrive MCP server"></a>
+  <a href="https://mcpservers.org/servers/vivek-gelp/crossdrive"><img src="https://mcpservers.org/badge.svg" alt="Listed on mcpservers.org"></a>
 </p>
 
 Crossdrive is a guarded file-and-mail layer between an AI client and your Google Drive and Gmail accounts (OneDrive
