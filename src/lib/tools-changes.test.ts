@@ -48,12 +48,15 @@ describe("changes tool", () => {
   type Handler = (args: Record<string, unknown>, ctx: ServerContext) => Promise<{ content: { text: string }[]; isError?: boolean }>;
   let tools: Record<string, Handler>;
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-09T12:00:00.000Z"));
     setStore(memoryStore());
     tools = {};
     const server = { registerTool: (name: string, _d: unknown, h: Handler) => void (tools[name] = h) } as unknown as McpServer;
     registerAllTools(server);
   });
   afterEach(() => {
+    vi.useRealTimers();
     setDriveFetch(undefined);
     setStore(undefined);
   });
