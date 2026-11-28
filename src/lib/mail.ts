@@ -1,5 +1,5 @@
 /**
- * The operations behind the mail_* tools: per-account Gmail context with the
+ * The operations behind the mail_* tools: per-account Gmail or Outlook context with the
  * scope gate, message composition (Drive attachments, reply headers), reply
  * recipient logic and label changes. Tool handlers in tools-mail.ts stay thin.
  */
@@ -11,9 +11,13 @@ import { FOLDER_MIME } from "./drive";
 import { extractEmail, GmailClient, header, latestMessage, parseAddressList, parseMessage, type AttachmentInfo, type FetchLike } from "./gmail";
 import { base64Url, buildMime, decodeBase64Url, renderHtml, type MimeAttachment } from "./mime";
 import { isGoogleNativeMime } from "./naming";
-import { assertGoogleAccount } from "./providers/guards";
+import { OutlookClient, outlookWebLink } from "./outlook";
+import { currentProviderFetch } from "./providers/env";
+import { PROVIDER_NAMES } from "./providers/guards";
+import { providerForAccount } from "./providers/index";
+import { providerAccessToken } from "./providers/tokens";
 import { MAX_READ_BYTES, NoTextError, paginate, pickReader, readContent } from "./readers";
-import { accessTokenFor, getAccount, gmailGranted, type Account } from "./store";
+import { accessTokenFor, accountProvider, getAccount, mailGranted, type Account } from "./store";
 import { uploadBytes } from "./upload";
 
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
@@ -28,14 +32,21 @@ const PDF_EXPORTABLE = new Set([
 
 let mailFetch: FetchLike | undefined;
 
-/** Test seam: route every GmailClient through this fetch. */
+/** Test seam: route every GmailClient and OutlookClient through this fetch. */
 export function setMailFetch(f: FetchLike | undefined) {
   mailFetch = f;
 }
 
+/** The calls the mail tools make; GmailClient and OutlookClient both implement them with Gmail's shapes. */
+export type MailClient = Pick<
+  GmailClient,
+  "listThreads" | "getThread" | "getMessage" | "getAttachment" | "listLabels" | "createDraft" | "getDraft" | "sendDraft" | "sendMessage" | "modifyMessage" | "modifyThread"
+>;
+
 export interface MailCtx {
   account: Account;
-  gmail: GmailClient;
+  provider: "google" | "microsoft";
+  client: MailClient;
   /** Lower-cased address of the connected account; used as the sender and to exclude oneself from reply-all. */
   email: string;
 }
@@ -44,24 +55,39 @@ export function gmailNotGranted(label: string): Error {
   return new Error(`Gmail not granted for ${label}; open ${baseUrl()}/connect and grant Gmail access`);
 }
 
+export function outlookNotGranted(label: string): Error {
+  return new Error(`Outlook mail not granted for ${label}; open ${baseUrl()}/connect and use Reconnect on its card to grant mail access`);
+}
+
 /**
- * Gmail context for `label`. `need` is checked against the account's mode and
+ * Mail context for `label` (Gmail for Google accounts, Outlook for Microsoft accounts). `need` is checked against the account's mode and
  * mail setting before any Gmail call (read-only accounts cannot draft, send or
  * relabel; mail "off" blocks everything; mail "draft" blocks sending).
  */
 export async function mailCtxFor(label: string, need: MailNeed = "read"): Promise<MailCtx> {
   // Fresh read (not the per-instance cache): mode and mail mode are access controls and must apply at once.
   const account = await getAccount(label, { fresh: true });
-  assertGoogleAccount(account);
+  const provider = accountProvider(account);
+  if (provider === "dropbox") {
+    throw new Error(`"${label}" is a ${PROVIDER_NAMES.dropbox} account; the mail tools work on Google (Gmail) and Microsoft (Outlook) accounts only.`);
+  }
   assertMailAllowed(account, need);
-  if (!gmailGranted(account)) throw gmailNotGranted(label);
-  const gmail = new GmailClient(await accessTokenFor(account), mailFetch ?? fetch);
-  return { account, gmail, email: account.email.toLowerCase() };
+  if (!mailGranted(account)) throw provider === "microsoft" ? outlookNotGranted(label) : gmailNotGranted(label);
+  const email = account.email.toLowerCase();
+  if (provider === "microsoft") {
+    return { account, provider, client: new OutlookClient(await providerAccessToken(account), mailFetch ?? currentProviderFetch()), email };
+  }
+  return { account, provider, client: new GmailClient(await accessTokenFor(account), mailFetch ?? fetch), email };
 }
 
 export function gmailWebLink(email: string, threadId: string | undefined, folder: "all" | "drafts" = "all"): string {
   const base = `https://mail.google.com/mail/?authuser=${encodeURIComponent(email)}`;
   return threadId ? `${base}#${folder}/${threadId}` : `${base}#${folder}`;
+}
+
+/** Web link for the account's mailbox: a Gmail thread link, or Outlook on the web. */
+export function mailWebLink(c: Pick<MailCtx, "provider" | "email">, threadId: string | undefined, folder: "all" | "drafts" = "all"): string {
+  return c.provider === "microsoft" ? outlookWebLink(c.email, folder) : gmailWebLink(c.email, threadId, folder);
 }
 
 // ---- attachments -------------------------------------------------------------
@@ -87,6 +113,14 @@ export async function loadAttachments(refs: AttachmentRef[] | undefined, default
   let total = 0;
   for (const ref of refs ?? []) {
     const label = ref.account ?? defaultAccount;
+    const owner = await getAccount(label);
+    if (accountProvider(owner) !== "google") {
+      const got = await loadCloudAttachment(owner, ref.driveFileId, total);
+      total += got.part.bytes.length;
+      parts.push(got.part);
+      summary.push({ driveFileId: ref.driveFileId, account: label, filename: got.part.filename, mimeType: got.part.mimeType, size: got.part.bytes.length });
+      continue;
+    }
     const c = await ctxFor(label);
     const meta = await c.drive.getFile(ref.driveFileId);
     if (meta.mimeType === FOLDER_MIME) throw new Error(`Cannot attach a folder (${meta.name}); attach files`);
@@ -109,6 +143,25 @@ export async function loadAttachments(refs: AttachmentRef[] | undefined, default
   return { parts, summary };
 }
 
+/** A OneDrive or Dropbox file (by its item id) as an attachment, through the storage adapter; counts against the same total cap. */
+async function loadCloudAttachment(owner: Account, id: string, totalSoFar: number): Promise<{ part: MimeAttachment }> {
+  const p = providerForAccount(owner);
+  const entry = await p.statId(id);
+  const cap = `Attachments exceed ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB in total`;
+  if (entry.isFolder) throw new Error(`Cannot attach a folder (${entry.name}); attach files`);
+  if (entry.size !== undefined && entry.size + totalSoFar > MAX_ATTACHMENT_BYTES) throw new Error(`${cap} (${entry.name} is ${entry.size} bytes)`);
+  const dl = await p.download(entry);
+  const chunks: Uint8Array[] = [];
+  let n = totalSoFar;
+  for await (const chunk of dl.stream) {
+    n += chunk.length;
+    if (n > MAX_ATTACHMENT_BYTES) throw new Error(`${cap} (after ${entry.name})`);
+    chunks.push(chunk);
+  }
+  const mimeType = entry.mimeType && entry.mimeType !== "application/octet-stream" ? entry.mimeType : dl.contentType.split(";")[0]!.trim() || "application/octet-stream";
+  return { part: { filename: dl.name || entry.name, mimeType, bytes: new Uint8Array(Buffer.concat(chunks)) } };
+}
+
 // ---- incoming attachments ----------------------------------------------------
 
 export interface AttachmentSelector {
@@ -129,7 +182,7 @@ export interface AttachmentSelector {
  * one to use with attachments.get right away.
  */
 export async function attachmentInfo(c: MailCtx, messageId: string, sel: AttachmentSelector): Promise<AttachmentInfo> {
-  const m = parseMessage(await c.gmail.getMessage(messageId, "full"), 0);
+  const m = parseMessage(await c.client.getMessage(messageId, "full"), 0);
   const all = m.attachments;
   const describe = () => all.map((x) => `#${x.index} ${x.filename} (partId ${x.partId ?? "?"})`).join(", ") || "none";
   const fail = (what: string) => new Error(`Message ${messageId} has no attachment ${what}. Attachments: ${describe()}. Select by partId, index or filename (attachmentId is not stable across reads).`);
@@ -161,7 +214,7 @@ export async function attachmentInfo(c: MailCtx, messageId: string, sel: Attachm
 /** Download the bytes of an attachment part (Gmail serves them base64url-encoded). */
 export async function downloadAttachment(c: MailCtx, messageId: string, info: AttachmentInfo): Promise<Buffer> {
   if (!info.attachmentId) throw new Error(`Attachment ${info.filename} has no attachmentId (inline part); nothing to download`);
-  const r = await c.gmail.getAttachment(messageId, info.attachmentId);
+  const r = await c.client.getAttachment(messageId, info.attachmentId);
   return Buffer.from(decodeBase64Url(r.data));
 }
 
@@ -255,7 +308,7 @@ export async function compose(c: MailCtx, a: ComposeArgs): Promise<Composed> {
   let references: string | undefined;
   let threadId: string | undefined;
   if (a.replyToMessageId) {
-    const orig = await c.gmail.getMessage(a.replyToMessageId, "metadata");
+    const orig = await c.client.getMessage(a.replyToMessageId, "metadata");
     inReplyTo = header(orig.payload, "Message-ID");
     references = [header(orig.payload, "References"), inReplyTo].filter(Boolean).join(" ") || undefined;
     threadId = orig.threadId;
@@ -289,7 +342,7 @@ export interface ReplyTarget {
 
 /** Recipients and subject for a reply to the newest message of `threadId`. */
 export async function replyTarget(c: MailCtx, threadId: string, replyAll: boolean): Promise<ReplyTarget> {
-  const thread = await c.gmail.getThread(threadId, "metadata");
+  const thread = await c.client.getThread(threadId, "metadata");
   const latest = latestMessage(thread);
   if (!latest) throw new Error(`Thread ${threadId} has no messages`);
   const from = header(latest.payload, "From") ?? "";
@@ -319,7 +372,7 @@ export async function replyTarget(c: MailCtx, threadId: string, replyAll: boolea
 /** Map label names (case-insensitive) or ids to ids; unknown names are an error listing what exists. */
 export async function resolveLabelIds(c: MailCtx, given: string[]): Promise<string[]> {
   if (given.length === 0) return [];
-  const labels = await c.gmail.listLabels();
+  const labels = await c.client.listLabels();
   return given.map((g) => {
     const hit = labels.find((l) => l.id === g) ?? labels.find((l) => l.name.toLowerCase() === g.toLowerCase());
     if (!hit) throw new Error(`Unknown label "${g}". Labels: ${labels.map((l) => l.name).join(", ")}`);
@@ -344,11 +397,11 @@ export async function changeLabels(c: MailCtx, a: LabelChangeArgs & { dryRun?: b
   if (add.length === 0 && remove.length === 0) throw new Error("Nothing to change: give add, remove or markRead");
   if (a.dryRun) {
     // Confirm the target exists; change nothing.
-    if (a.messageId) await c.gmail.getMessage(a.messageId, "minimal");
-    else await c.gmail.getThread(a.threadId!, "minimal");
+    if (a.messageId) await c.client.getMessage(a.messageId, "minimal");
+    else await c.client.getThread(a.threadId!, "minimal");
     return { dryRun: true, account: c.account.label, messageId: a.messageId, threadId: a.threadId, wouldAdd: add, wouldRemove: remove };
   }
-  const result = a.messageId ? await c.gmail.modifyMessage(a.messageId, add, remove) : await c.gmail.modifyThread(a.threadId!, add, remove);
+  const result = a.messageId ? await c.client.modifyMessage(a.messageId, add, remove) : await c.client.modifyThread(a.threadId!, add, remove);
   const labels = a.messageId ? ((result as { labelIds?: string[] }).labelIds ?? []) : [...new Set(((result as { messages?: { labelIds?: string[] }[] }).messages ?? []).flatMap((m) => m.labelIds ?? []))];
   await appendAudit({ tool: "mail_label", account: c.account.label, actor, messageId: a.messageId, threadId: a.threadId, add, remove });
   return { account: c.account.label, messageId: a.messageId, threadId: a.threadId, added: add, removed: remove, labels };

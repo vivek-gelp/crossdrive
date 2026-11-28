@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Outlook mail (BETA).** The `mail_*` tools now work on Microsoft accounts: search, read, attachments, labels
+  (folders, read state, flag and categories), drafts, send and reply, with the same mail modes, recipient allowlist,
+  audit entries and trash-only rule as Gmail. Connect several Outlook mailboxes, each under its own label. The
+  Microsoft consent now also asks for `Mail.ReadWrite` and `Mail.Send`: **add both delegated permissions to the Azure
+  app**, then use **Reconnect (grant Outlook mail)** on each existing Microsoft account. Existing accounts keep working
+  with their files-only grant until then; `mail=0` on `/connect/microsoft/start` connects OneDrive only. Mail
+  attachments can now come from OneDrive or Dropbox files too. Tested against a fake of Microsoft Graph, not yet
+  against live mailboxes.
 - Every tool now states all four MCP annotation hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`,
   `openWorldHint`) explicitly, filled in one place when tools are registered; directories such as OpenAI's require
   them. Reads are idempotent and never destructive, `audit` is closed-world, everything else talks to provider APIs.

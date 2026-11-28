@@ -56,7 +56,7 @@ describe("Google-only tools with a OneDrive or Dropbox label", () => {
     expect(tree.text).toMatch(/Dropbox account.*transfer/);
     const mail = await call(tools, "mail_search", { account: "client-a", query: "x", limit: 5 });
     expect(mail.isError).toBe(true);
-    expect(mail.text).toMatch(/Google accounts only/);
+    expect(mail.text).toMatch(/Google \(Gmail\) and Microsoft \(Outlook\) accounts only/);
   });
 
   it("find on one non-Google account is refused; find across all skips them with a note", async () => {

@@ -183,8 +183,10 @@ with Drive's server-side copy when the source account is writable, and by stream
 read-only, so a read-only account is never modified. `batch` applies up to 100 moves, renames, trashes and copies with a dry-run preview and a
 single batch id. `undo` reverses a move, rename, trash or untrash using the audit log.
 
-**Gmail.** Search, read (bodies as plain text, never raw HTML), label, archive, trash, draft, reply, and save attachments
-straight into Drive. Sending is off by default and can be limited to an allowlist of recipients.
+**Gmail and Outlook.** Search, read (bodies as plain text, never raw HTML), label, archive, trash, draft, reply, and save
+attachments straight into Drive. Outlook mailboxes of connected Microsoft accounts (BETA) take the same tools, so
+several Gmail and Outlook accounts sit side by side under their labels. Sending is off by default and can be limited to
+an allowlist of recipients.
 
 **Large files.** `upload_begin` returns a pre-authorised Drive upload URL so the bytes go from your computer straight to
 Google. `scripts/bulk-upload.mjs` mirrors a local folder into a drive with skip-if-exists and resume.
@@ -207,8 +209,8 @@ it is tested against in-memory fakes of their APIs only.** Treat it as beta, run
 ## Tools
 
 44 tools. Full reference with arguments: [docs/tools.md](docs/tools.md). Most write tools accept `dryRun`; tools.md lists
-which do not. The Drive, Gmail and sharing tools work on Google accounts; the `cloud_*` tools and `transfer` are BETA,
-not yet tested against live OneDrive or Dropbox accounts.
+which do not. The Drive and sharing tools work on Google accounts and the mail tools on Gmail and Outlook; the `cloud_*`
+tools, `transfer` and Outlook mail are BETA, not yet tested against live Microsoft or Dropbox accounts.
 
 | Tool | Access | What it does |
 |---|---|---|
@@ -235,7 +237,7 @@ not yet tested against live OneDrive or Dropbox accounts.
 | `batch` | write | Up to 100 operations with dry-run and one batch id |
 | `share`, `unshare`, `transfer_ownership` | write | Sharing changes, each audited with email and role |
 | `shortcut` | write | Create a Drive shortcut |
-| `mail_search`, `mail_read`, `mail_labels`, `mail_attachment` | read | Gmail search, read, label list, attachment text |
+| `mail_search`, `mail_read`, `mail_labels`, `mail_attachment` | read | Gmail or Outlook search, read, label list, attachment text |
 | `mail_draft` | write | Create a draft; nothing is sent |
 | `mail_send`, `mail_reply` | write | Send or reply; only for accounts whose mail mode is `send` |
 | `mail_label` | write | Label, archive, trash, mark read; no permanent delete |

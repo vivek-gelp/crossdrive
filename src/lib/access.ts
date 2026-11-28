@@ -51,7 +51,7 @@ export function assertMailAllowed(account: AccountLike, need: MailNeed): void {
   checkAccountWritable(account);
   if (need === "send" && mail === "draft") {
     throw new AccessError(
-      `account ${account.label} may only create drafts (mail mode "draft"): nothing was sent. Create a draft with mail_draft instead (for a reply pass replyToMessageId) and let the user send it from Gmail.`,
+      `account ${account.label} may only create drafts (mail mode "draft"): nothing was sent. Create a draft with mail_draft instead (for a reply pass replyToMessageId) and let the user send it from their mail app.`,
     );
   }
 }

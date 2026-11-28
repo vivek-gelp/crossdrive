@@ -7,6 +7,7 @@ import {
   accountScopes,
   getStore,
   gmailGranted,
+  mailGranted,
   loadAccounts,
   refreshAccessTokenFor,
   type Account,
@@ -32,6 +33,8 @@ export interface AccountStatus {
   ageDays: number;
   token: TokenHealth;
   gmail: boolean;
+  /** Gmail on Google, Outlook mail on Microsoft. */
+  mailGranted: boolean;
   storage: "blob" | "memory";
 }
 
@@ -158,6 +161,7 @@ export async function accountStatus(label?: string): Promise<{ accounts: Account
         ageDays: ageDays(a.connectedAt),
         token,
         gmail: accountProvider(a) === "google" && gmailGranted(a),
+        mailGranted: mailGranted(a),
         storage,
       };
     }),

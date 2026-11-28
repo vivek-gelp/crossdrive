@@ -1,7 +1,7 @@
 import { appendAudit } from "./audit";
 import { revokeGoogleToken } from "./google";
 import { revokeDropboxToken, revokeMicrosoftToken } from "./providers/tokens";
-import { accountProvider, loadAccounts, removeAccount, updateAccount, type Account } from "./store";
+import { accountProvider, loadAccounts, mailGranted, removeAccount, updateAccount, type Account } from "./store";
 
 /**
  * Owner actions from /connect: change mode / mail, disconnect one account, disconnect everything. Every action is
@@ -30,8 +30,9 @@ export function setRevokeFetch(f: typeof fetch | undefined) {
 
 /**
  * The record to store after a successful provider consent. New accounts default to mode "write" and mail "draft"
- * (mail "off" for providers without mail). A reconnect keeps the label's mode, and for Google its mail, exactly as they
- * were, including a legacy record's absent mail field; OneDrive and Dropbox records always get mail "off".
+ * (mail "off" for Dropbox, and for Microsoft when Outlook mail was not granted). A reconnect keeps the label's mode, and
+ * for Google its mail, exactly as they were, including a legacy record's absent mail field. A Microsoft reconnect keeps
+ * its mail when mail was already granted, starts at "draft" when this consent first grants it, and is "off" without it.
  */
 export function connectedAccountRecord(
   fresh: { label: string; email: string; refresh_token: string; scopes: string[]; provider: Provider },
@@ -41,11 +42,12 @@ export function connectedAccountRecord(
   const base: Account = { ...fresh, connectedAt: now.toISOString() };
   if (existing) {
     if (existing.mode !== undefined) base.mode = existing.mode;
-    if (fresh.provider !== "google") base.mail = "off";
+    if (fresh.provider === "microsoft") base.mail = !mailGranted(fresh) ? "off" : mailGranted(existing) ? (existing.mail ?? "draft") : "draft";
+    else if (fresh.provider !== "google") base.mail = "off";
     else if (existing.mail !== undefined) base.mail = existing.mail;
     return base;
   }
-  return { ...base, mode: "write", mail: fresh.provider === "google" ? "draft" : "off" };
+  return { ...base, mode: "write", mail: fresh.provider === "google" || mailGranted(fresh) ? "draft" : "off" };
 }
 
 export const MODES = ["read", "write"] as const;
@@ -62,7 +64,8 @@ export async function setAccountMail(label: string, mail: string, actor: string)
   if (!(MAIL_MODES as readonly string[]).includes(mail)) throw new Error(`mail must be one of ${MAIL_MODES.join(", ")}`);
   const cur = (await loadAccounts(true)).find((a) => a.label === label);
   if (!cur) throw new Error(`No connected account labelled "${label}"`);
-  if (mail !== "off" && accountProvider(cur) !== "google") throw new Error(`Mail is only available for Google accounts.`);
+  if (mail !== "off" && accountProvider(cur) === "dropbox") throw new Error(`Mail is only available for Google and Microsoft accounts.`);
+  if (mail !== "off" && accountProvider(cur) === "microsoft" && !mailGranted(cur)) throw new Error(`Outlook mail is not granted for ${label}; use Reconnect on its card first.`);
   const a = await updateAccount(label, { mail: mail as Account["mail"] });
   await appendAudit({ tool: "admin_mail", account: label, actor, note: `mail=${mail}` });
   return a;

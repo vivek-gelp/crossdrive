@@ -20,6 +20,8 @@ export interface ProviderState {
   /** Admin email that started the flow; the callback must see the same admin session. */
   admin: string;
   nonce: string;
+  /** Microsoft: whether the consent asked for Outlook mail too (absent means yes). */
+  mail?: boolean;
 }
 
 function key(): Uint8Array {
@@ -51,7 +53,7 @@ export async function issueProviderState(s: Omit<ProviderState, "nonce">): Promi
 export async function verifyProviderState(token: string, provider: ProviderState["provider"]): Promise<ProviderState & { verifier: string }> {
   const { payload } = await jwtVerify(token, key(), { issuer: jwtEnv().issuer, algorithms: ["HS256"] });
   if (payload.use !== USE || payload.provider !== provider) throw new Error("state is not for this flow");
-  const { label, admin, nonce } = payload as unknown as ProviderState;
+  const { label, admin, nonce, mail } = payload as unknown as ProviderState;
   if (typeof label !== "string" || typeof admin !== "string" || typeof nonce !== "string") throw new Error("malformed state");
-  return { provider, label, admin, nonce, verifier: pkceVerifier(nonce) };
+  return { provider, label, admin, nonce, mail: mail !== false, verifier: pkceVerifier(nonce) };
 }
