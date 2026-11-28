@@ -8,11 +8,42 @@
  * persist it (best effort; the previous token stays valid until it expires).
  */
 import { baseUrl } from "../config";
-import { accessTokenFor as googleAccessToken, accountProvider, upsertAccount, type Account } from "../store";
+import { accessTokenFor as googleAccessToken, accountProvider, MS_MAIL_SCOPE_NAMES, upsertAccount, type Account } from "../store";
 import { currentProviderFetch, dropboxClient, microsoftClient } from "./env";
 import { ProviderError } from "./types";
 
 export const MS_SCOPES = ["offline_access", "Files.ReadWrite.All", "User.Read"] as const;
+/** Added to the consent for Outlook mail (on by default; `mail=0` on the start route leaves them out). */
+export const MS_MAIL_SCOPES = MS_MAIL_SCOPE_NAMES;
+
+export function msConsentScopes(mail: boolean): string[] {
+  return mail ? [...MS_SCOPES, ...MS_MAIL_SCOPES] : [...MS_SCOPES];
+}
+
+const MS_KNOWN = [...MS_SCOPES, ...MS_MAIL_SCOPES] as string[];
+
+/**
+ * Scope names Microsoft reports as granted (it answers with full URIs such as https://graph.microsoft.com/Mail.Send),
+ * limited to the ones we know; the requested list when the answer has none.
+ */
+export function msGrantedScopes(scope: string | undefined, requested: string[]): string[] {
+  if (!scope) return requested;
+  const got = scope
+    .split(/\s+/)
+    .map((s) => s.replace(/^https:\/\/graph\.microsoft\.com\//i, ""))
+    .map((s) => MS_KNOWN.find((k) => k.toLowerCase() === s.toLowerCase()))
+    .filter((s): s is string => !!s);
+  const out = [...new Set(got)];
+  if (requested.includes("offline_access") && !out.includes("offline_access")) out.unshift("offline_access");
+  return out.length > 1 ? out : requested;
+}
+
+/** Scopes for a refresh: what the account consented to (asking for more fails the refresh), else the files-only set of older records. */
+export function msRefreshScopes(account: Pick<Account, "scopes">): string[] {
+  const have = (account.scopes ?? []).filter((s) => MS_KNOWN.includes(s));
+  if (!have.includes("Files.ReadWrite.All")) return [...MS_SCOPES];
+  return have.includes("offline_access") ? have : ["offline_access", ...have];
+}
 export const DROPBOX_AUTHORIZE_URL = "https://www.dropbox.com/oauth2/authorize";
 export const DROPBOX_TOKEN_URL = "https://api.dropboxapi.com/oauth2/token";
 
@@ -41,14 +72,14 @@ function requireDropbox() {
   return c;
 }
 
-export function microsoftConsentUrl(state: string, codeChallenge: string, loginHint?: string): string {
+export function microsoftConsentUrl(state: string, codeChallenge: string, loginHint?: string, mail = true): string {
   const { clientId } = requireMs();
   const q = new URLSearchParams({
     client_id: clientId,
     response_type: "code",
     redirect_uri: microsoftRedirectUri(),
     response_mode: "query",
-    scope: MS_SCOPES.join(" "),
+    scope: msConsentScopes(mail).join(" "),
     state,
     code_challenge: codeChallenge,
     code_challenge_method: "S256",
@@ -101,7 +132,7 @@ async function tokenRequest(url: string, body: Record<string, string>, what: str
   return t;
 }
 
-export function exchangeMicrosoftCode(code: string, codeVerifier: string): Promise<ProviderTokens> {
+export function exchangeMicrosoftCode(code: string, codeVerifier: string, mail = true): Promise<ProviderTokens> {
   const { clientId, clientSecret } = requireMs();
   return tokenRequest(
     `${msAuthority()}/token`,
@@ -112,7 +143,7 @@ export function exchangeMicrosoftCode(code: string, codeVerifier: string): Promi
       code,
       redirect_uri: microsoftRedirectUri(),
       code_verifier: codeVerifier,
-      scope: MS_SCOPES.join(" "),
+      scope: msConsentScopes(mail).join(" "),
     },
     "Microsoft token exchange",
   );
@@ -127,11 +158,11 @@ export function exchangeDropboxCode(code: string, codeVerifier: string): Promise
   );
 }
 
-function refreshMicrosoft(refreshToken: string): Promise<ProviderTokens> {
+function refreshMicrosoft(account: Account): Promise<ProviderTokens> {
   const { clientId, clientSecret } = requireMs();
   return tokenRequest(
     `${msAuthority()}/token`,
-    { client_id: clientId, client_secret: clientSecret, grant_type: "refresh_token", refresh_token: refreshToken, scope: MS_SCOPES.join(" ") },
+    { client_id: clientId, client_secret: clientSecret, grant_type: "refresh_token", refresh_token: account.refresh_token, scope: msRefreshScopes(account).join(" ") },
     "Microsoft token refresh",
   );
 }
@@ -155,7 +186,7 @@ export function clearProviderTokens(label?: string) {
 export async function refreshProviderToken(account: Account): Promise<{ token: string; expiresInSec: number }> {
   const provider = accountProvider(account);
   if (provider === "google") throw new Error("refreshProviderToken is for OneDrive and Dropbox accounts");
-  const t = provider === "microsoft" ? await refreshMicrosoft(account.refresh_token) : await refreshDropbox(account.refresh_token);
+  const t = provider === "microsoft" ? await refreshMicrosoft(account) : await refreshDropbox(account.refresh_token);
   const expiresInSec = t.expires_in || 3600;
   cache.set(`${provider}:${account.label}`, { token: t.access_token, exp: Date.now() + expiresInSec * 1000 });
   if (provider === "microsoft" && t.refresh_token && t.refresh_token !== account.refresh_token) {

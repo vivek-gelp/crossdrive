@@ -21,7 +21,7 @@ export interface Account {
   provider?: "google" | "microsoft" | "dropbox";
   /** Server-enforced access mode. Absent means "write". "read" blocks every write tool for this account. */
   mode?: "read" | "write";
-  /** Mail capability (google only). Absent (legacy record) means "send"; new connections default to "draft". "off" hides mail entirely. */
+  /** Mail capability (Gmail, or Outlook on Microsoft accounts). Absent (legacy record) means "send"; new connections default to "draft". "off" hides mail entirely. */
   mail?: "off" | "draft" | "send";
 }
 
@@ -45,6 +45,17 @@ export function accountScopes(a: Pick<Account, "scopes">): string[] {
 export function gmailGranted(a: Pick<Account, "scopes">): boolean {
   const have = accountScopes(a);
   return GMAIL_SCOPE_NAMES.every((s) => have.includes(s));
+}
+
+/** Microsoft Graph scopes the Outlook mail tools need (stored by name on the account). */
+export const MS_MAIL_SCOPE_NAMES = ["Mail.ReadWrite", "Mail.Send"] as const;
+
+/** Whether the mail tools can work on this account: Gmail scopes on Google, Outlook mail scopes on Microsoft, never on Dropbox. */
+export function mailGranted(a: Pick<Account, "scopes" | "provider">): boolean {
+  const p = accountProvider(a);
+  if (p === "google") return gmailGranted(a);
+  if (p === "microsoft") return MS_MAIL_SCOPE_NAMES.every((s) => (a.scopes ?? []).includes(s));
+  return false;
 }
 
 const ACCOUNTS_PATH = "accounts.enc";

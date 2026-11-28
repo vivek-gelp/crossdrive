@@ -9,8 +9,9 @@ export const dynamic = "force-dynamic";
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,190}$/;
 
 /**
- * Begin the Microsoft (OneDrive) consent flow for one labelled account (admin only), with the same query parameters as the
- * Google flow and the /connect page: ?label=<label>[&email=<address>][&reconnect=1]. `email` (alias `login_hint`) pre-selects the Microsoft account.
+ * Begin the Microsoft (OneDrive + Outlook mail) consent flow for one labelled account (admin only), with the same query parameters as the
+ * Google flow and the /connect page: ?label=<label>[&email=<address>][&reconnect=1][&mail=0]. `email` (alias `login_hint`) pre-selects
+ * the Microsoft account; `mail=0` asks for OneDrive only (for tenants that do not allow consenting to mail).
  * An existing label is only replaced when reconnect=1 (the card's Reconnect button).
  */
 export async function GET(req: Request) {
@@ -28,7 +29,7 @@ export async function GET(req: Request) {
   try {
     const existing = (await loadAccounts(true)).find((a) => a.label === label);
     if (existing && !reconnect) return back(`"${label}" is already connected. Use Reconnect on its card, or pick another label.`);
-    const target = await connectStartUrl("microsoft", label, admin, email || undefined);
+    const target = await connectStartUrl("microsoft", label, admin, email || undefined, url.searchParams.get("mail") !== "0");
     return NextResponse.redirect(target, { status: 302, headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     return htmlError(400, e instanceof Error ? e.message : "Unexpected error");

@@ -7,8 +7,9 @@ write tool in code. `dryRun` is accepted by `mkdir`, `put`, `move`, `rename`, `t
 run: `upload_begin`/`upload_finish`, `transfer_ownership`, `shortcut`, `mail_draft` (it only creates a draft),
 `mail_send`, `mail_reply` and the beta `cloud_mkdir`, `cloud_move`, `cloud_rename` and `cloud_trash`.
 
-The Drive, Gmail and sharing tools work on Google accounts only; given a OneDrive or Dropbox label they return an error
-that points to the `cloud_*` tools and `transfer`.
+The Drive and sharing tools work on Google accounts only; given a OneDrive or Dropbox label they return an error
+that points to the `cloud_*` tools and `transfer`. The mail tools work on Google (Gmail) and Microsoft (Outlook, BETA)
+accounts; see [Outlook accounts](#outlook-accounts-beta).
 
 **Unknown arguments are rejected.** Every tool, including each item of a `batch` and nested objects such as `saveTo`,
 refuses an argument it does not know, before anything runs. The error names the unknown argument, lists the accepted
@@ -43,7 +44,7 @@ return the `auditId` of their audit entry (the id `undo` takes).
 
 | Tool | Access | Description |
 |---|---|---|
-| `accounts` | read | Connected accounts: label, provider, email, storage used and quota (Google), Gmail granted, mode (read-only or write), mail mode. OneDrive and Dropbox accounts are listed with a note instead of storage |
+| `accounts` | read | Connected accounts: label, provider, email, storage used and quota (Google), Gmail granted (Outlook mail granted for Microsoft), mode (read-only or write), mail mode. OneDrive and Dropbox accounts are listed with a note instead of storage |
 | `status` | read | Per account: whether a live token refresh works (or its error), granted scopes, provider, mode, mail mode, connection age; plus configuration warnings. `temporaryGrants` lists temporary copy grants Crossdrive created that Drive still shows (normally none) |
 | `drives` | read | Shared Drives an account belongs to, each with its `label:drive/<name>` path. A consumer (gmail.com) account returns an empty list with a note |
 
@@ -86,7 +87,7 @@ return the `auditId` of their audit entry (the id `undo` takes).
 | `transfer_ownership` | write | Direct inside a Workspace domain; otherwise creates a pending-owner invitation that the recipient must accept |
 | `shortcut` | write | Create a Drive shortcut to a file or folder |
 
-## Gmail
+## Mail (Gmail and Outlook)
 
 All mail tools take an explicit `account`; the sender is never inferred. The account's mail mode (`off`, `draft`, `send`)
 decides which of them work.
@@ -101,6 +102,26 @@ decides which of them work.
 | `mail_send` | write | Send a draft or a new message. Requires mail mode `send` and, if configured, an allowed recipient |
 | `mail_reply` | write | Reply to the newest message of a thread. Same requirements as `mail_send` |
 | `mail_label` | write | Add or remove labels, archive, trash (the `TRASH` label), mark read or unread. No permanent delete |
+
+### Outlook accounts (BETA)
+
+A Microsoft account connected with Outlook mail granted (`Mail.ReadWrite`, `Mail.Send`; see
+[providers.md](providers.md#outlook-mail-beta)) takes the same tools and arguments. Tested against an in-memory fake of
+Microsoft Graph, not yet against live mailboxes. Differences:
+
+- **Threads** are Outlook conversations; `threadId` is the conversation id. Ids are Graph immutable ids, so they stay
+  valid when a message moves between folders. Sending a draft gives the sent copy a new id, which `mail_send` returns.
+- **Search** uses Outlook (KQL) syntax: `from:`, `to:`, `subject:`, `received>=2026-01-01`, `hasattachments:true`.
+  `has:attachment`, `newer_than:Nd`, `older_than:Nd`, `is:unread` and `is:read` are translated; `is:unread` combined
+  with other terms is applied to the returned page.
+- **Labels**: `INBOX`, `SENT`, `DRAFT`, `SPAM` and `TRASH` are folders, `UNREAD` is the read state, `STARRED` the
+  follow-up flag, and every other label is an Outlook category (by name). Archive (remove `INBOX`) moves to the
+  Archive folder; trash (add `TRASH`) moves to Deleted Items, where it can be restored. Nothing is deleted permanently.
+- **Attachments to send** can come from the account's own OneDrive (`driveFileId` = OneDrive item id) or, with
+  `attachments[].account`, from any other connected account. Attached e-mails and links in incoming mail cannot be
+  read; open those in Outlook.
+- **Web links** open Outlook on the web (outlook.live.com for consumer accounts, outlook.office.com otherwise), not the
+  single message.
 
 ## Other providers (beta)
 

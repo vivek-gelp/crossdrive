@@ -82,7 +82,7 @@ function AccountCard({ a, csrf }: { a: AccountStatus; csrf: string }) {
             {nextMode === "read" ? "Make read-only" : "Allow writes"}
           </button>
         </form>
-        {a.provider === "google" && (
+        {(a.provider === "google" || (a.provider === "microsoft" && a.mailGranted)) && (
           <form method="post" action="/connect/action" className="row">
             <Hidden csrf={csrf} action="mail" label={a.label} />
             <label className="field">
@@ -104,7 +104,7 @@ function AccountCard({ a, csrf }: { a: AccountStatus; csrf: string }) {
           </a>
         ) : (
           <a className="btn" href={`/connect/${a.provider}/start?label=${encodeURIComponent(a.label)}&reconnect=1`}>
-            Reconnect
+            {a.provider === "microsoft" && !a.mailGranted ? "Reconnect (grant Outlook mail)" : "Reconnect"}
           </a>
         )}
       </div>
@@ -263,7 +263,7 @@ export function AdminView(p: AdminViewProps) {
         <h2>{none ? "Connect your first account" : "Add an account"}</h2>
         {none && <p>No accounts are connected yet, so your AI client would see nothing. Connect one here.</p>}
         <p className="muted">
-          New Google accounts start with read + write and mail as drafts only; change that on the account&apos;s card afterwards.
+          New Google and Microsoft accounts start with read + write and mail (Gmail or Outlook) as drafts only; change that on the account&apos;s card afterwards.
         </p>
         <form method="get" action="/connect/start" className="stack">
           <label className="field">

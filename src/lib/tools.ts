@@ -27,7 +27,7 @@ import { DRIVE_PREFIX, parsePathArg, pathResolver, SHARED_PREFIX } from "./paths
 import { exportMimeFor, MAX_READ_BYTES, NoTextError, paginate, pickReader, readContent } from "./readers";
 import { assertGoogleAccount, PROVIDER_NAMES } from "./providers/guards";
 import { registerProviderReadTools, registerProviderWriteTools } from "./providers/register";
-import { accessTokenFor, accountMail, accountMode, accountProvider, gmailGranted, loadAccounts, type Account } from "./store";
+import { accessTokenFor, accountMail, accountMode, accountProvider, gmailGranted, loadAccounts, mailGranted, type Account } from "./store";
 import { label, wrap } from "./toolkit";
 import { registerMailReadTools, registerMailWriteTools } from "./tools-mail";
 import { CHUNK_BYTES, MAX_SOURCE_BYTES, SESSION_TTL_SECONDS, uploadFromUrl } from "./upload";
@@ -111,9 +111,12 @@ export function registerReadTools(rawServer: McpServer, opts: RegisterOpts = { f
               email: a.email,
               provider,
               gmail: false,
+              outlook: mailGranted(a),
               mode: accountMode(a),
               mail: accountMail(a),
-              note: `${PROVIDER_NAMES[provider]} account (beta): use cloud_list / cloud_find / cloud_read / cloud_mkdir / cloud_move / cloud_rename / cloud_trash and transfer.`,
+              note:
+                `${PROVIDER_NAMES[provider]} account (beta): use cloud_list / cloud_find / cloud_read / cloud_mkdir / cloud_move / cloud_rename / cloud_trash and transfer.` +
+                (provider === "microsoft" ? (mailGranted(a) ? " The mail_* tools work on its Outlook mailbox." : " Outlook mail is not granted; reconnect it on /connect to use the mail tools.") : ""),
             };
           }
           try {

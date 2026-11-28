@@ -7,7 +7,7 @@
 import { allowedRecipients } from "./access";
 import { inboxFolder } from "./ctx";
 import { namingRuleEnabled, NAMING_RULE } from "./naming";
-import { accountMail, accountMode, accountProvider, gmailGranted, type Account } from "./store";
+import { accountMail, accountMode, accountProvider, mailGranted, type Account } from "./store";
 
 /** Structural on purpose: labels are free-form strings. */
 type AccountInfo = { label: string } & Pick<Account, "mode" | "mail" | "scopes" | "provider">;
@@ -25,8 +25,8 @@ function describeAccount(a: AccountInfo): string {
   if (provider !== "google") parts.push(`${PROVIDER_LABEL[provider]}, beta`);
   if (accountMode(a) === "read") parts.push("read-only");
   const mail = accountMail(a);
-  if (provider !== "google" || mail === "off" || !gmailGranted(a)) parts.push("no mail");
-  else parts.push(mail === "draft" ? "mail: drafts only" : "mail: can send");
+  if (mail === "off" || !mailGranted(a)) parts.push("no mail");
+  else parts.push(`${provider === "microsoft" ? "Outlook " : ""}mail: ${mail === "draft" ? "drafts only" : "can send"}`);
   return `${a.label} (${parts.join(", ")})`;
 }
 
@@ -47,7 +47,7 @@ export function buildInstructions(accounts: AccountInfo[], opts: InstructionOpts
   const others = accounts.filter((a) => accountProvider(a) !== "google");
   if (others.length) {
     s.push(
-      `${others.map((a) => a.label).join(", ")} ${others.length === 1 ? "is a OneDrive or Dropbox account" : "are OneDrive or Dropbox accounts"} (beta): the Drive and Gmail tools (find, list, read, put, copy, mail_*, ...) refuse ${others.length === 1 ? "it" : "them"}. ` +
+      `${others.map((a) => a.label).join(", ")} ${others.length === 1 ? "is a OneDrive or Dropbox account" : "are OneDrive or Dropbox accounts"} (beta): the Drive tools (find, list, read, put, copy, ...) refuse ${others.length === 1 ? "it" : "them"}; the mail_* tools work on Microsoft accounts with Outlook mail. ` +
         `Use cloud_list, cloud_find and cloud_read${opts.full ? ", cloud_mkdir, cloud_move, cloud_rename and cloud_trash" : ""} with label:/path on any provider` +
         (opts.full ? "; transfer copies or moves files and folder trees between any two accounts, across providers (dryRun defaults to true; follow the cursor until done=true)." : "."),
     );
@@ -63,7 +63,7 @@ export function buildInstructions(accounts: AccountInfo[], opts: InstructionOpts
     "Trash is the only delete. Every write, including sharing changes, is audited; move, rename, trash and untrash can be reversed with undo (audit entry id or batchId). " +
       "Single write tools accept dryRun=true to preview; for many changes use batch with dryRun=true first, then dryRun=false.",
   );
-  const mailAccounts = accounts.filter((a) => accountMail(a) !== "off" && gmailGranted(a));
+  const mailAccounts = accounts.filter((a) => accountMail(a) !== "off" && mailGranted(a));
   if (mailAccounts.length) {
     s.push(
       "Mail: mail_search/mail_read/mail_labels read, mail_draft creates a draft, mail_send sends (a draft or a new message), mail_reply answers the newest message of a thread (asDraft=true keeps it as a draft), " +

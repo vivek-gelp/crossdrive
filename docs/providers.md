@@ -24,12 +24,32 @@ two connected accounts, whatever the provider.
 4. **Certificates & secrets** → **New client secret**. Copy the *value* (not the id) into `MS_CLIENT_SECRET`. Secrets
    expire, so note the date and rotate it before then.
 5. **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated permissions**: `Files.ReadWrite.All`,
-   `User.Read`, `offline_access`. Some work/school tenants do not let users consent to `Files.ReadWrite.All`. In that
+   `User.Read`, `offline_access`, and for Outlook mail `Mail.ReadWrite` and `Mail.Send`. Some work/school tenants do not let users consent to `Files.ReadWrite.All`. In that
    case a tenant admin must click **Grant admin consent**.
 6. Copy the **Application (client) ID** into `MS_CLIENT_ID`.
 
-The connect flow asks for `offline_access Files.ReadWrite.All User.Read` with PKCE (S256) and `prompt=select_account`.
+The connect flow asks for `offline_access Files.ReadWrite.All User.Read Mail.ReadWrite Mail.Send` (without the two mail
+scopes when started with `mail=0`) with PKCE (S256) and `prompt=select_account`.
 Microsoft rotates refresh tokens. The server saves a new one whenever Microsoft returns it.
+
+## Outlook mail (BETA)
+
+A Microsoft account can also expose its Outlook mailbox to the `mail_*` tools. The connect flow asks for
+`Mail.ReadWrite` and `Mail.Send` next to the file scopes, so in the Azure app add those two **Delegated permissions**
+under **API permissions** as well. Each Microsoft account you connect, personal (outlook.com, hotmail.com) or
+work/school, becomes its own label, so several Outlook mailboxes sit side by side with your Gmail accounts.
+
+- A new Microsoft account with mail granted starts at mail mode `draft`, like a Google account. Switch it to `send` on
+  its card on `/connect`.
+- Accounts connected before Outlook mail existed keep working with their files-only grant (refreshes ask only for what
+  the account consented to). Their card shows **Reconnect (grant Outlook mail)**; after that consent the account starts
+  at mail mode `draft`.
+- `/connect/microsoft/start?label=work&mail=0` connects OneDrive only, for tenants that do not let users consent to mail.
+- `Mail.ReadWrite` lets the tools move messages to Deleted Items; no tool deletes mail permanently, the same rule as
+  for Gmail. `Mail.Send` is what `mail_send` and `mail_reply` use, and they are still refused unless the account's mail
+  mode is `send`.
+
+What differs from Gmail is listed in [tools.md](tools.md#outlook-accounts-beta).
 
 ## Register a Dropbox app
 
@@ -75,7 +95,7 @@ a Dropbox grant at Dropbox. Microsoft has no endpoint that revokes a single dele
 OneDrive account deletes the stored token and reports "revoke failed"; remove the app's consent yourself at
 <https://account.live.com/consent/Manage> (personal) or <https://myapps.microsoft.com> (work/school).
 
-The Google-only tools (`find`, `list`, `read`, `put`, `copy`, `mail_*`, ...) refuse a OneDrive or Dropbox label with a
+The Google-only tools (`find`, `list`, `read`, `put`, `copy`, ...) refuse a OneDrive or Dropbox label with a
 pointer to the tools below; `find` across all accounts skips them and lists them under `skipped`; `accounts` lists them
 with their provider.
 

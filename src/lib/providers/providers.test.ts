@@ -144,7 +144,7 @@ describe("connect flows", () => {
     const url = new URL(await connectStartUrl("microsoft", "work", "admin@example.com"));
     expect(url.origin + url.pathname).toBe("https://login.microsoftonline.com/common/oauth2/v2.0/authorize");
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
-    expect(url.searchParams.get("scope")).toBe("offline_access Files.ReadWrite.All User.Read");
+    expect(url.searchParams.get("scope")).toBe("offline_access Files.ReadWrite.All User.Read Mail.ReadWrite Mail.Send");
     expect(url.searchParams.get("login_hint")).toBe("work@example.com");
     expect(url.searchParams.get("redirect_uri")).toMatch(/\/connect\/microsoft\/callback$/);
     const state = url.searchParams.get("state")!;
@@ -153,11 +153,21 @@ describe("connect flows", () => {
 
     const label = await connectCallback("microsoft", new URLSearchParams({ state, code: "code-work" }), "admin@example.com");
     expect(label).toBe("work");
-    // A reconnect goes through connectedAccountRecord: the label keeps its mode (absent on this record, i.e. "write") and gets no mail.
-    expect(upserts.at(-1)).toMatchObject({ label: "work", email: "work@example.com", provider: "microsoft", mail: "off", refresh_token: "rt-work" });
+    // A reconnect goes through connectedAccountRecord: the label keeps its mode (absent on this record, i.e. "write"); this consent first grants Outlook mail, so mail starts at "draft".
+    expect(upserts.at(-1)).toMatchObject({ label: "work", email: "work@example.com", provider: "microsoft", mail: "draft", refresh_token: "rt-work" });
+    expect(upserts.at(-1)!.scopes).toEqual(expect.arrayContaining(["Files.ReadWrite.All", "Mail.ReadWrite", "Mail.Send"]));
     expect(accountMode(upserts.at(-1)!)).toBe("write");
     const tokenCall = h.ms.log.find((l) => l.url.endsWith("/token"));
     expect(tokenCall).toBeTruthy();
+  });
+
+  it("Microsoft with mail=0: files-only consent, no mail scopes stored, mail off", async () => {
+    const url = new URL(await connectStartUrl("microsoft", "work", "admin@example.com", undefined, false));
+    expect(url.searchParams.get("scope")).toBe("offline_access Files.ReadWrite.All User.Read");
+    const state = url.searchParams.get("state")!;
+    expect(await connectCallback("microsoft", new URLSearchParams({ state, code: "code-work" }), "admin@example.com")).toBe("work");
+    expect(upserts.at(-1)).toMatchObject({ label: "work", provider: "microsoft", mail: "off" });
+    expect(upserts.at(-1)!.scopes).not.toContain("Mail.Send");
   });
 
   it("Dropbox: offline access, PKCE; refuses another admin's state and a label held by another provider", async () => {

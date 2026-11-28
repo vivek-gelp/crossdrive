@@ -1,5 +1,5 @@
 /**
- * Gmail tools. Read: mail_search, mail_read, mail_labels. Write: mail_draft,
+ * Mail tools for Gmail and Outlook (Microsoft accounts, via outlook.ts). Read: mail_search, mail_read, mail_labels. Write: mail_draft,
  * mail_send, mail_reply, mail_label. Every tool takes `account` (the sender
  * is never inferred); every write is audit-logged with recipients and
  * subject. Nothing here deletes mail: trash is the TRASH label.
@@ -14,7 +14,7 @@ import {
   changeLabels,
   compose,
   downloadAttachment,
-  gmailWebLink,
+  mailWebLink,
   mailAudit,
   mailCtxFor,
   MAX_ATTACHMENT_BYTES,
@@ -138,11 +138,12 @@ export function registerMailReadTools(server: McpServer, opts: MailReadToolOpts 
     {
       title: "Search mail",
       description:
-        "Search one account's Gmail with Gmail query syntax (from:, to:, subject:, has:attachment, is:unread, newer_than:7d, label:, in:anywhere, ...). " +
+        "Search one account's mail. Gmail accounts take Gmail query syntax (from:, to:, subject:, has:attachment, is:unread, newer_than:7d, label:, in:anywhere, ...); " +
+        "Outlook accounts take Outlook (KQL) search (from:, to:, subject:, received>=2026-01-01, hasattachments:true) and also understand has:attachment, is:unread, is:read, newer_than:Nd and older_than:Nd. " +
         "Returns threads newest first with the newest message's id, from, to, subject, date, snippet, labels, unread and hasAttachments. Page with pageToken.",
       inputSchema: z.object({
         account: label,
-        query: z.string().min(1).describe("Gmail search query"),
+        query: z.string().min(1).describe("Search query (Gmail syntax, or KQL for Outlook accounts)"),
         limit: z.number().int().min(1).max(MAX_SEARCH).default(20),
         pageToken: z.string().optional(),
       }),
@@ -150,11 +151,11 @@ export function registerMailReadTools(server: McpServer, opts: MailReadToolOpts 
     },
     wrap(async (a) => {
       const c = await mailCtxFor(a.account);
-      const page = await c.gmail.listThreads({ q: a.query, maxResults: a.limit, pageToken: a.pageToken });
+      const page = await c.client.listThreads({ q: a.query, maxResults: a.limit, pageToken: a.pageToken });
       const ids = (page.threads ?? []).map((t) => t.id);
       const threads: ThreadSummary[] = [];
       for (let i = 0; i < ids.length; i += 10) {
-        const chunk = await Promise.all(ids.slice(i, i + 10).map((id) => c.gmail.getThread(id, "metadata")));
+        const chunk = await Promise.all(ids.slice(i, i + 10).map((id) => c.client.getThread(id, "metadata")));
         for (const t of chunk) {
           const s = summarizeThread(t);
           if (s) threads.push(s);
@@ -183,16 +184,16 @@ export function registerMailReadTools(server: McpServer, opts: MailReadToolOpts 
       let threadId: string;
       let messages: ParsedMessage[];
       if (a.messageId) {
-        const m = parseMessage(await c.gmail.getMessage(a.messageId, "full"), a.maxChars);
+        const m = parseMessage(await c.client.getMessage(a.messageId, "full"), a.maxChars);
         threadId = m.threadId;
         messages = [m];
       } else {
-        const t = await c.gmail.getThread(a.threadId!, "full");
+        const t = await c.client.getThread(a.threadId!, "full");
         threadId = t.id;
         messages = (t.messages ?? []).map((m) => parseMessage(m, a.maxChars)).sort((x, y) => x.date.localeCompare(y.date));
       }
       const saved = a.saveAttachmentsTo && opts.allowSave ? await saveAll(c, messages, a.saveAttachmentsTo, actorOf(ctx.http?.authInfo)) : undefined;
-      return { notice: UNTRUSTED_NOTICE, account: a.account, threadId, webLink: gmailWebLink(c.email, threadId), messages, ...(saved ? { saved } : {}) };
+      return { notice: UNTRUSTED_NOTICE, account: a.account, threadId, webLink: mailWebLink(c, threadId), messages, ...(saved ? { saved } : {}) };
     }),
   );
 
@@ -247,13 +248,15 @@ export function registerMailReadTools(server: McpServer, opts: MailReadToolOpts 
     "mail_labels",
     {
       title: "List labels",
-      description: "All Gmail labels of an account (system ones like INBOX, UNREAD, STARRED, TRASH and user labels) with id, name, type and unread counts.",
+      description:
+        "All labels of an account (system ones like INBOX, UNREAD, STARRED, TRASH and user labels) with id, name, type and unread counts. " +
+        "On Outlook accounts INBOX, SENT, DRAFT, SPAM and TRASH are folders, UNREAD is the read state, STARRED the follow-up flag, and the user labels are Outlook categories.",
       inputSchema: z.object({ account: label }),
       annotations: { readOnlyHint: true },
     },
     wrap(async (a) => {
       const c = await mailCtxFor(a.account);
-      const labels = await c.gmail.listLabels();
+      const labels = await c.client.listLabels();
       return {
         account: a.account,
         labels: labels
@@ -270,15 +273,15 @@ export function registerMailWriteTools(server: McpServer) {
     {
       title: "Create draft",
       description:
-        "Create a Gmail draft in the given account (nothing is sent). Allowed whenever the account's mail setting is draft or send. Plain-text body, rendered as text + HTML; replyToMessageId threads it as a reply; attachments come from Drive. " +
-        "Returns draftId, threadId and a Gmail web link to review it. Send later with mail_send {account, draftId}. Audit-logged with recipients and subject.",
+        "Create a draft (Gmail or Outlook) in the given account (nothing is sent). Allowed whenever the account's mail setting is draft or send. Plain-text body, rendered as text + HTML; replyToMessageId threads it as a reply; attachments come from Drive. " +
+        "Returns draftId, threadId and a web link to review it. Send later with mail_send {account, draftId}. Audit-logged with recipients and subject.",
       inputSchema: z.object({ account: label, ...composeFields }),
       annotations: { destructiveHint: false },
     },
     wrap(async (a, ctx) => {
       const c = await mailCtxFor(a.account, "draft");
       const composed = await compose(c, { ...a, attachments: a.attachments as AttachmentRef[] | undefined });
-      const draft = await c.gmail.createDraft(composed.raw, composed.threadId);
+      const draft = await c.client.createDraft(composed.raw, composed.threadId);
       await mailAudit(c, "mail_draft", actorOf(ctx.http?.authInfo), composed, a.subject, { draftId: draft.id, messageId: draft.message.id, threadId: draft.message.threadId });
       return {
         account: a.account,
@@ -290,7 +293,7 @@ export function registerMailWriteTools(server: McpServer) {
         bcc: a.bcc ?? [],
         subject: a.subject,
         attachments: composed.attachments,
-        webLink: gmailWebLink(c.email, draft.message.threadId, "drafts"),
+        webLink: mailWebLink(c, draft.message.threadId, "drafts"),
       };
     }),
   );
@@ -322,12 +325,12 @@ export function registerMailWriteTools(server: McpServer) {
       if (a.draftId) {
         if (a.to || a.subject || a.body || a.cc || a.bcc || a.attachments || a.replyToMessageId) throw new Error("Give draftId alone, or the message fields without draftId");
         if (allowedRecipients().length > 0) {
-          const d = await c.gmail.getDraft(a.draftId);
+          const d = await c.client.getDraft(a.draftId);
           const dh = (n: string) => d.message.payload?.headers?.find((x) => x.name.toLowerCase() === n)?.value;
           assertRecipientsAllowed(["to", "cc", "bcc"].flatMap((n) => parseAddressList(dh(n))));
         }
-        const sent = await c.gmail.sendDraft(a.draftId);
-        await c.gmail
+        const sent = await c.client.sendDraft(a.draftId);
+        await c.client
           .getMessage(sent.id, "metadata")
           .then((m) => {
             const h = (n: string) => m.payload?.headers?.find((x) => x.name.toLowerCase() === n)?.value;
@@ -335,12 +338,12 @@ export function registerMailWriteTools(server: McpServer) {
             return mailAudit(c, "mail_send", actor, { raw: "", attachments: [], recipients }, h("subject") ?? "", { draftId: a.draftId, messageId: sent.id, threadId: sent.threadId });
           })
           .catch(() => mailAudit(c, "mail_send", actor, { raw: "", attachments: [], recipients: [] }, "", { draftId: a.draftId, messageId: sent.id, threadId: sent.threadId }));
-        return { account: a.account, sent: true, draftId: a.draftId, messageId: sent.id, threadId: sent.threadId, webLink: gmailWebLink(c.email, sent.threadId) };
+        return { account: a.account, sent: true, draftId: a.draftId, messageId: sent.id, threadId: sent.threadId, webLink: mailWebLink(c, sent.threadId) };
       }
       if (!a.to?.length || !a.subject || !a.body) throw new Error("Give draftId, or to + subject + body");
       assertRecipientsAllowed([...a.to, ...(a.cc ?? []), ...(a.bcc ?? [])]);
       const composed = await compose(c, { ...a, to: a.to, subject: a.subject, body: a.body, attachments: a.attachments as AttachmentRef[] | undefined });
-      const sent = await c.gmail.sendMessage(composed.raw, composed.threadId);
+      const sent = await c.client.sendMessage(composed.raw, composed.threadId);
       await mailAudit(c, "mail_send", actor, composed, a.subject, { messageId: sent.id, threadId: sent.threadId });
       return {
         account: a.account,
@@ -352,7 +355,7 @@ export function registerMailWriteTools(server: McpServer) {
         bcc: a.bcc ?? [],
         subject: a.subject,
         attachments: composed.attachments,
-        webLink: gmailWebLink(c.email, sent.threadId),
+        webLink: mailWebLink(c, sent.threadId),
       };
     }),
   );
@@ -371,7 +374,7 @@ export function registerMailWriteTools(server: McpServer) {
         body: composeFields.body,
         replyAll: z.boolean().default(false),
         attachments,
-        asDraft: z.boolean().optional().describe("Save the reply as a Gmail draft instead of sending it"),
+        asDraft: z.boolean().optional().describe("Save the reply as a draft instead of sending it"),
       }),
       annotations: { destructiveHint: false },
     },
@@ -380,7 +383,7 @@ export function registerMailWriteTools(server: McpServer) {
         const c = await mailCtxFor(a.account, "draft");
         const target = await replyTarget(c, a.threadId, a.replyAll);
         const composed = await compose(c, { ...target, body: a.body, attachments: a.attachments as AttachmentRef[] | undefined });
-        const draft = await c.gmail.createDraft(composed.raw, composed.threadId ?? a.threadId);
+        const draft = await c.client.createDraft(composed.raw, composed.threadId ?? a.threadId);
         await mailAudit(c, "mail_draft", actorOf(ctx.http?.authInfo), composed, target.subject, { draftId: draft.id, messageId: draft.message.id, threadId: draft.message.threadId });
         return {
           account: a.account,
@@ -393,14 +396,14 @@ export function registerMailWriteTools(server: McpServer) {
           cc: target.cc,
           subject: target.subject,
           attachments: composed.attachments,
-          webLink: gmailWebLink(c.email, draft.message.threadId, "drafts"),
+          webLink: mailWebLink(c, draft.message.threadId, "drafts"),
         };
       }
       const c = await mailCtxFor(a.account, "send");
       const target = await replyTarget(c, a.threadId, a.replyAll);
       assertRecipientsAllowed([...target.to, ...target.cc]);
       const composed = await compose(c, { ...target, body: a.body, attachments: a.attachments as AttachmentRef[] | undefined });
-      const sent = await c.gmail.sendMessage(composed.raw, composed.threadId ?? a.threadId);
+      const sent = await c.client.sendMessage(composed.raw, composed.threadId ?? a.threadId);
       await mailAudit(c, "mail_reply", actorOf(ctx.http?.authInfo), composed, target.subject, { messageId: sent.id, threadId: sent.threadId });
       return {
         account: a.account,
@@ -412,7 +415,7 @@ export function registerMailWriteTools(server: McpServer) {
         cc: target.cc,
         subject: target.subject,
         attachments: composed.attachments,
-        webLink: gmailWebLink(c.email, sent.threadId),
+        webLink: mailWebLink(c, sent.threadId),
       };
     }),
   );
@@ -422,7 +425,7 @@ export function registerMailWriteTools(server: McpServer) {
     {
       title: "Change labels",
       description:
-        "Add/remove labels on one message or a whole thread (label names or ids). Archive = remove INBOX; trash = add TRASH (restorable from Gmail's Trash for 30 days); markRead true/false toggles UNREAD. " +
+        "Add/remove labels on one message or a whole thread (label names or ids). Archive = remove INBOX; trash = add TRASH (restorable from Gmail's Trash for 30 days, or Outlook's Deleted Items; on Outlook archive moves to the Archive folder); markRead true/false toggles UNREAD. " +
         "There is no permanent delete. dryRun=true resolves the labels and reports what would change without changing anything. Audit-logged.",
       inputSchema: z.object({
         account: label,

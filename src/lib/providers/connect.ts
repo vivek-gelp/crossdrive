@@ -9,7 +9,7 @@ import { accountProvider, loadAccounts, upsertAccount, type Account } from "../s
 import { currentProviderFetch, isValidLabel } from "./env";
 import { PROVIDER_NAMES } from "./index";
 import { issueProviderState, verifyProviderState } from "./state";
-import { clearProviderTokens, dropboxConsentUrl, exchangeDropboxCode, exchangeMicrosoftCode, microsoftConsentUrl, MS_SCOPES } from "./tokens";
+import { clearProviderTokens, dropboxConsentUrl, exchangeDropboxCode, exchangeMicrosoftCode, microsoftConsentUrl, msConsentScopes, msGrantedScopes } from "./tokens";
 
 export type ConnectProvider = "microsoft" | "dropbox";
 
@@ -21,12 +21,12 @@ async function assertLabelFree(label: string, provider: ConnectProvider): Promis
   return existing;
 }
 
-/** URL to send the admin to (the provider's consent screen). */
-export async function connectStartUrl(provider: ConnectProvider, label: string, admin: string, loginHint?: string): Promise<string> {
+/** URL to send the admin to (the provider's consent screen). Microsoft asks for Outlook mail too unless `mail` is false. */
+export async function connectStartUrl(provider: ConnectProvider, label: string, admin: string, loginHint?: string, mail = true): Promise<string> {
   if (!isValidLabel(label)) throw new Error("label must match ^[a-z][a-z0-9-]{0,23}$ (lower-case letters, digits, dashes; starts with a letter)");
   const existing = await assertLabelFree(label, provider);
-  const { state, challenge } = await issueProviderState({ provider, label, admin });
-  if (provider === "microsoft") return microsoftConsentUrl(state, challenge, loginHint || existing?.email);
+  const { state, challenge } = await issueProviderState({ provider, label, admin, ...(provider === "microsoft" && !mail ? { mail: false } : {}) });
+  if (provider === "microsoft") return microsoftConsentUrl(state, challenge, loginHint || existing?.email, mail);
   return dropboxConsentUrl(state, challenge);
 }
 
@@ -63,13 +63,14 @@ export async function connectCallback(provider: ConnectProvider, params: URLSear
   if (!code) throw new Error(`Missing code from ${PROVIDER_NAMES[provider]}`);
   const existing = await assertLabelFree(st.label, provider);
 
-  const tokens = provider === "microsoft" ? await exchangeMicrosoftCode(code, st.verifier) : await exchangeDropboxCode(code, st.verifier);
+  const mail = st.mail !== false;
+  const tokens = provider === "microsoft" ? await exchangeMicrosoftCode(code, st.verifier, mail) : await exchangeDropboxCode(code, st.verifier);
   if (!tokens.refresh_token) {
     throw new Error(provider === "microsoft" ? "Microsoft returned no refresh token (offline_access missing?)" : "Dropbox returned no refresh token (token_access_type=offline missing?)");
   }
   const email = provider === "microsoft" ? await microsoftEmail(tokens.access_token) : await dropboxEmail(tokens.access_token);
-  const scopes = provider === "microsoft" ? [...MS_SCOPES] : (tokens.scope ?? "").split(/\s+/).filter(Boolean);
-  // Same defaults as the Google connect: new accounts get mode "write" (mail "off": no mail for these providers); a reconnect keeps the mode.
+  const scopes = provider === "microsoft" ? msGrantedScopes(tokens.scope, msConsentScopes(mail)) : (tokens.scope ?? "").split(/\s+/).filter(Boolean);
+  // Same defaults as the Google connect: new accounts get mode "write" and, with Outlook mail granted, mail "draft"; a reconnect keeps both.
   await upsertAccount(
     connectedAccountRecord({ label: st.label as Account["label"], email, refresh_token: tokens.refresh_token, scopes: scopes.length ? scopes : [provider], provider }, existing),
   );

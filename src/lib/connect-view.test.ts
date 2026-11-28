@@ -16,6 +16,7 @@ function account(label: string, email: string): AccountStatus {
     ageDays: 0,
     token: { ok: true, checkedAt: "2026-11-12T10:00:00.000Z" },
     gmail: true,
+    mailGranted: true,
     storage: "memory",
   };
 }

@@ -52,6 +52,15 @@ const json = (body: unknown, status = 200, headers: Record<string, string> = {})
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...headers } });
 const err = (status: number, code: string, message = code) => json({ error: { code, message } }, status);
 
+/** Microsoft answers with the granted scopes as Graph URIs (offline_access is not listed). */
+function grantedScope(requested: string | null): string {
+  return (requested ?? "Files.ReadWrite.All User.Read")
+    .split(" ")
+    .filter((x) => x && x !== "offline_access")
+    .map((x) => `https://graph.microsoft.com/${x}`)
+    .join(" ");
+}
+
 export function fakeOneDrive(labels: string[], opts: FakeMsOpts = {}): FakeOneDrive {
   const accounts = new Map<string, FakeMsAccount>();
   for (const l of labels) {
@@ -123,7 +132,7 @@ export function fakeOneDrive(labels: string[], opts: FakeMsOpts = {}): FakeOneDr
       const rt = form.get("refresh_token") ?? form.get("code") ?? "";
       const label = rt.replace(/^rt-/, "").replace(/^code-/, "").replace(/-2$/, "");
       if (!accounts.has(label)) return json({ error: "invalid_grant" }, 400);
-      return json({ access_token: `ms-tok-${label}`, expires_in: 3600, refresh_token: opts.rotate ? `rt-${label}-2` : `rt-${label}`, scope: "Files.ReadWrite.All User.Read" });
+      return json({ access_token: `ms-tok-${label}`, expires_in: 3600, refresh_token: opts.rotate ? `rt-${label}-2` : `rt-${label}`, scope: grantedScope(form.get("scope")) });
     }
 
     // Upload sessions: pre-authenticated, must not carry Authorization.
